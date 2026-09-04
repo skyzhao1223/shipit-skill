@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 from pathlib import Path
 
 from shipit_skill import bump, publish
@@ -161,7 +162,7 @@ def execute(
                     "-m", f"chore: release {tag}"], check=True)
 
     print("[2/7] build")
-    subprocess.run(["python3", "-m", "build"], check=True)
+    subprocess.run([sys.executable, "-m", "build"], check=True)
 
     print(f"[3/7] publish {pkg} to registry")
     try:
@@ -218,7 +219,7 @@ def execute(
     if has_promo:
         print(f"[6/7] promo check ({new})")
         subprocess.run(
-            ["python3", "-m", "shipit_skill.promo_check",
+            [sys.executable, "-m", "shipit_skill.promo_check",
              "--dir", str(Path(dir_) / "promo"), "--version", new],
             check=True,
         )
