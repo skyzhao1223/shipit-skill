@@ -20,7 +20,7 @@ dev = [
 shipit-skill = "shipit_skill.cli:main"
 
 [tool.setuptools]
-packages = ["shipit_skill"]
+packages = ["shipit_skill", "shipit_skill.templates", "shipit_skill.templates.promo"]
 package-dir = {"" = "src"}
 
 [tool.setuptools.package-data]
