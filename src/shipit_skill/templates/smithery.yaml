@@ -1,0 +1,31 @@
+# https://smithery.ai/docs/config
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      mcpServers:
+        type: object
+        additionalProperties:
+          type: object
+          properties:
+            command:
+              type: string
+              description: The command to start the MCP server.
+              default: {server}
+            env:
+              type: object
+              description: Environment variables for the MCP server.
+              additionalProperties:
+                type: string
+    required: ["mcpServers"]
+  commandFunction: |
+    (config) => {{
+      const serverName = Object.keys(config.mcpServers)[0];
+      const server = config.mcpServers[serverName] || {{}};
+      return {{
+        command: server.command || "{server}",
+        args: server.args || [],
+        env: server.env || {{}}
+      }};
+    }}

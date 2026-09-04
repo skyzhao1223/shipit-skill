@@ -82,6 +82,10 @@ def _cmd_init(args: argparse.Namespace) -> None:
         ignore = tpl / ".dockerignore"
         if ignore.exists():
             files.append((target / ".dockerignore", ignore.read_text(encoding="utf-8")))
+        smithery = tpl / "smithery.yaml"
+        if smithery.exists():
+            files.append((target / "smithery.yaml", smithery.read_text(encoding="utf-8")
+                          .format(server=args.server)))
 
         scripts = target / "scripts"
         scripts.mkdir(parents=True, exist_ok=True)
@@ -175,6 +179,10 @@ def _cmd_release(args: argparse.Namespace) -> None:
 
 def _cmd_check_promo(args: argparse.Namespace) -> None:
     known = {k: v for k, v in (kv.split("=") for kv in args.prs.split(",") if kv)}
+    if args.fix:
+        fixed, known = promo_check.fix_dir(args.dir, args.version, prs=known)
+        for f in fixed:
+            print(f"fixed: {f}")
     errors = promo_check.check_dir(
         args.dir,
         args.version,
@@ -357,6 +365,7 @@ def main() -> None:
     p_promo.add_argument("--prs", default="")
     p_promo.add_argument("--no-links", action="store_true")
     p_promo.add_argument("--report", action="store_true", help="emit JSON report")
+    p_promo.add_argument("--fix", action="store_true", help="rewrite stale versions/PRs in place")
     p_promo.set_defaults(fn=_cmd_check_promo)
 
     p_glama = sub.add_parser("check-glama", help="check Glama listing + badge")

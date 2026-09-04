@@ -35,7 +35,7 @@ select = ["E", "F", "I", "W", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=src/shipit_skill --cov-context=test --cov-report=term-missing --cov-fail-under=85"
+addopts = "--cov=src/shipit_skill --cov-context=test --cov-report=term-missing --cov-fail-under=93"
 
 [tool.coverage.run]
 branch = true

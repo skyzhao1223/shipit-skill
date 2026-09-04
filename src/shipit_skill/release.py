@@ -77,6 +77,45 @@ def release(
     return cmds
 
 
+def _tag_exists(tag: str) -> bool:
+    try:
+        r = subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/{tag}"],
+                           capture_output=True)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _remote_tag_exists(tag: str) -> bool:
+    try:
+        r = subprocess.run(["git", "ls-remote", "--tags", "origin", tag],
+                           capture_output=True, text=True)
+        return tag in r.stdout
+    except Exception:
+        return False
+
+
+def _changelog_entry(dir_: str, tag: str) -> str:
+    """Extract the newest CHANGELOG.md entry for `tag` (or a generic body)."""
+    ch = Path(dir_) / "CHANGELOG.md"
+    if not ch.exists():
+        return f"Release {tag}."
+    lines = ch.read_text(encoding="utf-8").split("\n")
+    start = -1
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.startswith("## ") and start < 0:
+            if tag.lstrip("v") in line or tag in line:
+                start = i
+        elif start >= 0 and line.startswith("## ") and i > start:
+            end = i
+            break
+    if start < 0:
+        return f"Release {tag}."
+    body = "\n".join(line.rstrip() for line in lines[start + 1:end]).strip()
+    return body or f"Release {tag}."
+
+
 def execute(
     lang: str,
     pkg: str,
@@ -86,26 +125,38 @@ def execute(
     title: str | None = None,
     server: str | None = None,
 ) -> None:
-    """Actually run the release: bump → build → publish → tag → gh release → promo.
+    """Actually run the release: doctor → bump → build → publish → tag → gh release → promo.
 
     The tag and GitHub Release are created only AFTER the registry publish
-    succeeds, so a failed upload never leaves a dangling release. On failure
-    it rolls back the tag and prints cleanup guidance.
+    succeeds. On publish failure it rolls back the commit and prints cleanup
+    guidance. Re-running is safe: existing tags/releases are skipped.
     """
+    from shipit_skill import doctor
+
+    print("[0/7] doctor gate")
+    checks = doctor.doctor()
+    blocked = [c for c in checks if not c["ok"] and c["name"] != "NPM_TOKEN set"]
+    if blocked:
+        for c in blocked:
+            print(f"  ✗ {c['name']}: {c['detail']}")
+        print("\n❌ release blocked by doctor gaps (use `shipit-skill doctor` to inspect)")
+        raise SystemExit(1)
+    print("  ✓ all release checks pass")
+
     old = bump.parse_version(dir_)
     new = bump.bump(old, how) if not how.startswith("set:") else how[4:]
     tag = f"v{new}"
 
-    print(f"[1/6] bump {old} → {new}")
+    print(f"[1/7] bump {old} → {new}")
     bump.set_version(dir_, new)
     subprocess.run(["git", "add", "-A"], check=True)
     subprocess.run(["git", "commit", "-q", "--allow-empty",
                     "-m", f"chore: release {tag}"], check=True)
 
-    print("[2/6] build")
+    print("[2/7] build")
     subprocess.run(["python3", "-m", "build"], check=True)
 
-    print(f"[3/6] publish {pkg} to registry")
+    print(f"[3/7] publish {pkg} to registry")
     try:
         if lang == "python":
             publish.execute_python(pkg, server)
@@ -119,32 +170,47 @@ def execute(
         print("  fix the failure, then re-run the same release command")
         raise SystemExit(1)
 
-    print(f"[4/6] tag {tag} + push")
-    subprocess.run(["git", "tag", tag], check=True)
+    print(f"[4/7] tag {tag} + push")
+    if _tag_exists(tag) or _remote_tag_exists(tag):
+        print(f"  {tag} already exists — skipping")
+    else:
+        subprocess.run(["git", "tag", tag], check=True)
     subprocess.run(["git", "push"], check=True)
-    subprocess.run(["git", "push", "origin", tag], check=True)
+    if not _remote_tag_exists(tag):
+        subprocess.run(["git", "push", "origin", tag], check=True)
 
     if repo and _gh_available():
-        print(f"[5/6] GitHub Release {tag}")
-        release_title = title or f"{pkg} {tag}"
-        subprocess.run(
-            ["gh", "release", "create", tag, "--repo", repo, "--title", release_title,
-             "--generate-notes"],
-            check=True,
-        )
+        exists = subprocess.run(["gh", "release", "view", tag, "--repo", repo],
+                                capture_output=True).returncode == 0
+        if exists:
+            print(f"[5/7] GitHub Release {tag} already exists — skipping")
+        else:
+            print(f"[5/7] GitHub Release {tag}")
+            release_title = title or f"{pkg} {tag}"
+            notes = _changelog_entry(dir_, tag)
+            body_path = Path(dir_) / ".release-notes.tmp"
+            body_path.write_text(notes, encoding="utf-8")
+            try:
+                subprocess.run(
+                    ["gh", "release", "create", tag, "--repo", repo, "--title", release_title,
+                     "--notes-file", str(body_path)],
+                    check=True,
+                )
+            finally:
+                body_path.unlink(missing_ok=True)
     else:
-        print("[5/6] (skip gh release — no --repo or gh CLI)")
+        print("[5/7] (skip gh release — no --repo or gh CLI)")
 
     has_promo = (Path(dir_) / "promo").is_dir()
     if has_promo:
-        print(f"[6/6] promo check ({new})")
+        print(f"[6/7] promo check ({new})")
         subprocess.run(
             ["python3", "-m", "shipit_skill.promo_check",
              "--dir", str(Path(dir_) / "promo"), "--version", new],
             check=True,
         )
     else:
-        print("[6/6] (skip promo — no promo/ dir)")
+        print("[6/7] (skip promo — no promo/ dir)")
     print(f"\nReleased {tag} ✅")
 
 

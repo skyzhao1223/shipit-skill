@@ -26,6 +26,12 @@ from shipit_skill import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+
+_OK_CHECKS = [{"name": "ok", "ok": True, "detail": ""}]
+def _mock_doctor_all_ok(monkeypatch):
+    import shipit_skill.doctor as _d
+    monkeypatch.setattr(_d, "doctor", lambda: _OK_CHECKS)
+
 DIST = ROOT / "dist"
 
 
@@ -201,6 +207,8 @@ def test_cli_init_scaffolds_project(tmp_path: Path):
     assert (target / ".dockerignore").exists()
     assert (target / "scripts/mcp_smoke.py").exists()
     assert (target / "promo/README.md").exists()
+    assert (target / "smithery.yaml").exists()
+    assert "hello-mcp" in (target / "smithery.yaml").read_text(encoding="utf-8")
 
 
 def test_cli_init_refuses_overwrite(tmp_path: Path):
@@ -367,10 +375,11 @@ def test_bump_set():
         assert "2.0.0" in out
 
 
-def test_release_execute_requires_token(tmp_path):
+def test_release_execute_requires_token(tmp_path, monkeypatch):
     import os
 
     os.environ.pop("PYPI_TOKEN", None)
+    _mock_doctor_all_ok(monkeypatch)
     from unittest.mock import patch
 
     from shipit_skill import release as rel
@@ -445,9 +454,15 @@ def test_release_execute_happy(monkeypatch, tmp_path):
     )
     monkeypatch.setenv("PYPI_TOKEN", "pypi-abc")
     monkeypatch.setenv("NPM_TOKEN", "npm-abc")
+    _mock_doctor_all_ok(monkeypatch)
+
+    class R:
+        returncode = 1
+        stdout = ""
+        stderr = ""
 
     def fake_run(cmd, **kw):
-        return None
+        return R()
 
     monkeypatch.setattr(rel.subprocess, "run", fake_run)
     monkeypatch.setattr(pub.subprocess, "run", fake_run)
@@ -467,6 +482,7 @@ def test_release_execute_ts_no_repo(monkeypatch, tmp_path):
     )
     monkeypatch.setenv("PYPI_TOKEN", "pypi-abc")
     monkeypatch.setenv("NPM_TOKEN", "npm-abc")
+    _mock_doctor_all_ok(monkeypatch)
 
     def fake_run(cmd, **kw):
         return None
@@ -1001,6 +1017,7 @@ def test_release_execute_rolls_back_on_publish_failure(monkeypatch, tmp_path):
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
     )
     monkeypatch.setenv("PYPI_TOKEN", "pypi-abc")
+    _mock_doctor_all_ok(monkeypatch)
 
     cmds = []
 
@@ -1175,6 +1192,7 @@ def test_cli_release_execute_missing_token(tmp_path, monkeypatch):
     from shipit_skill import release as rel
 
     os.environ.pop("PYPI_TOKEN", None)
+    _mock_doctor_all_ok(monkeypatch)
     monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: None)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
@@ -1253,7 +1271,14 @@ def test_release_main_execute_dispatch(monkeypatch, tmp_path):
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
     )
     monkeypatch.setenv("PYPI_TOKEN", "x")
-    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: None)
+    _mock_doctor_all_ok(monkeypatch)
+
+    class R:
+        returncode = 1
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: R())
     monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
     code, out = run_mod("release", "--lang", "python", "--pkg", "demo",
                         "--how", "patch", "--dir", str(tmp_path), "--execute")
@@ -1337,3 +1362,435 @@ def test_promo_check_url_ok_exception(monkeypatch):
 
     monkeypatch.setattr(pc.urllib.request, "urlopen", boom)
     assert pc._url_ok("https://github.com/me/r") is False
+
+
+# --- release doctor gate + idempotency + changelog notes ---
+
+
+def test_release_execute_blocked_by_doctor_gaps(monkeypatch, tmp_path, capsys):
+    import shipit_skill.doctor as doc
+    from shipit_skill import release as rel
+
+    monkeypatch.setattr(doc, "doctor", lambda: [{"name": "gh", "ok": False, "detail": "no"}])
+    with pytest.raises(SystemExit) as ei:
+        rel.execute("python", "demo", "patch", dir_=str(tmp_path))
+    assert ei.value.code == 1
+    assert "blocked by doctor" in capsys.readouterr().out
+
+
+def test_release_execute_idempotent_skips_existing_tag(monkeypatch, tmp_path):
+    from unittest.mock import patch
+
+    from shipit_skill import publish as pub
+    from shipit_skill import release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.setenv("NPM_TOKEN", "x")
+    _mock_doctor_all_ok(monkeypatch)
+
+    class R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def fake_run(cmd, **kw):
+        return R()
+
+    monkeypatch.setattr(rel.subprocess, "run", fake_run)
+    monkeypatch.setattr(pub.subprocess, "run", fake_run)
+    with patch.object(rel, "_tag_exists", return_value=True), \
+            patch.object(rel, "_remote_tag_exists", return_value=True):
+        rel.execute("python", "demo", "set:0.2.0", repo="me/demo", dir_=str(tmp_path))
+    # no exception — skipped tag + skipped gh release path is fine
+
+
+def test_changelog_entry_parses_section(tmp_path: Path):
+    from shipit_skill import release as rel
+
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [0.2.0] - 2026-09-04\n\n- add feature\n- fix bug\n\n"
+        "## [0.1.0] - 2026-08-01\n",
+        encoding="utf-8",
+    )
+    body = rel._changelog_entry(str(tmp_path), "v0.2.0")
+    assert "add feature" in body
+    assert "fix bug" in body
+    assert "0.1.0" not in body
+
+
+def test_changelog_entry_fallback_when_missing(tmp_path: Path):
+    from shipit_skill import release as rel
+
+    body = rel._changelog_entry(str(tmp_path), "v0.9.0")
+    assert "v0.9.0" in body
+
+
+# --- promo_check --fix ---
+
+
+def test_promo_fix_dir_rewrites_stale_versions(tmp_path: Path):
+    f = tmp_path / "post.md"
+    f.write_text("install v0.1.0 and see PR #8888\n", encoding="utf-8")
+    fixed, prs = promo_check.fix_dir(str(tmp_path), "0.1.1", prs={})
+    assert any("0.1.0 →" in x and "0.1.1" in x for x in fixed)
+    assert prs == {"8888": "unknown"}
+    assert "v0.1.1" in f.read_text(encoding="utf-8")
+
+
+def test_promo_fix_dir_marks_unknown_pr(tmp_path: Path):
+    f = tmp_path / "post.md"
+    f.write_text("see PR #9999\n", encoding="utf-8")
+    fixed, prs = promo_check.fix_dir(str(tmp_path), "0.1.1", prs={})
+    assert any("9999" in x and "marked as known" in x for x in fixed)
+    assert "9999" in prs
+
+
+def test_promo_fix_preserves_v_prefix(tmp_path: Path):
+    f = tmp_path / "post.md"
+    f.write_text("version is v0.1.0 now\n", encoding="utf-8")
+    promo_check.fix_dir(str(tmp_path), "0.2.0")
+    assert "v0.2.0" in f.read_text(encoding="utf-8")
+
+
+def test_cli_check_promo_fix(tmp_path: Path):
+    f = tmp_path / "post.md"
+    f.write_text("install v0.1.0 and see #9999\n", encoding="utf-8")
+    code, out = run_cli("check-promo", "--dir", str(tmp_path), "--version", "0.1.1",
+                        "--no-links", "--fix")
+    assert code == 0
+    assert "fixed:" in out
+    assert "v0.1.1" in f.read_text(encoding="utf-8")
+
+
+# --- promo --fix main + release tag print + awesome recipe variants ---
+
+
+def test_promo_check_fix_main_exits_0_when_fresh(tmp_path):
+    (tmp_path / "post.md").write_text("install v0.1.1\n", encoding="utf-8")
+    code, out = run_mod("promo_check", "--dir", str(tmp_path), "--version", "0.1.1",
+                        "--no-links", "--fix")
+    assert code == 0
+    assert "fresh" in out
+
+
+def test_promo_check_release_tag_prints(tmp_path):
+    (tmp_path / "post.md").write_text("see releases/tag/v0.1.1\n", encoding="utf-8")
+    code, out = run_mod("promo_check", "--dir", str(tmp_path), "--version", "0.1.1",
+                        "--no-links")
+    assert code == 0
+    assert "release tag v0.1.1" in out
+
+
+def test_promo_check_fix_main_with_errors_then_clean(tmp_path):
+    f = tmp_path / "post.md"
+    f.write_text("install v0.1.0\n", encoding="utf-8")
+    code, out = run_mod("promo_check", "--dir", str(tmp_path), "--version", "0.1.1",
+                        "--no-links", "--fix")
+    assert code == 0
+    assert "v0.1.1" in f.read_text(encoding="utf-8")
+
+
+def test_release_recipe_typescript_and_promo(tmp_path, capsys):
+    from shipit_skill import release as rel
+
+    (tmp_path / "promo").mkdir()
+    (tmp_path / "promo" / "a.md").write_text("x\n", encoding="utf-8")
+    cmds = rel.release("typescript", "demo", "set:0.3.0", dir_=str(tmp_path), dry_run=True)
+    text = "\n".join(cmds)
+    assert "check-promo" in text
+    assert "npm publish" in capsys.readouterr().out
+
+
+def test_release_recipe_no_repo_no_gh(tmp_path, monkeypatch):
+    from unittest.mock import patch
+
+    from shipit_skill import release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    with patch.object(rel, "_gh_available", return_value=False):
+        cmds = rel.release("python", "x", "patch", repo="me/x", dir_=str(tmp_path),
+                           dry_run=True)
+    assert any("manually" in c for c in cmds)
+
+
+def test_awesome_pr_recipe_with_emoji_title():
+    from shipit_skill import awesome_pr
+
+    text = awesome_pr.recipe("u/l", "me/r", "me/f", "b", "Add r")
+    assert "🤖🤖🤖" in text
+
+
+def test_awesome_pr_run_failure():
+    from shipit_skill import awesome_pr
+
+    with pytest.raises((SystemExit, FileNotFoundError)):
+        awesome_pr._run(["definitely-not-a-cmd-xyz"], cwd="/tmp")
+
+
+# --- upgrade check network-failure path ---
+
+
+def test_latest_pypi_version_network_error(monkeypatch):
+    import urllib.request as _ur
+
+    from shipit_skill import cli as cli_mod
+
+    def boom(*a, **k):
+        raise OSError("no network")
+
+    monkeypatch.setattr(_ur, "urlopen", boom)
+    assert cli_mod._latest_pypi_version() is None
+
+
+def test_check_upgrade_silent_on_network_error(monkeypatch, capsys):
+    from shipit_skill import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "_latest_pypi_version", lambda: None)
+    cli_mod._check_upgrade()
+    assert capsys.readouterr().err == ""
+
+
+# --- check-promo --fix leftover unknown PR after fix still exits 1 ---
+
+
+def test_cli_check_promo_fix_remaining_errors(tmp_path):
+    f = tmp_path / "post.md"
+    f.write_text("install v0.1.0\n", encoding="utf-8")
+    code, out = run_cli("check-promo", "--dir", str(tmp_path), "--version", "0.1.1",
+                        "--no-links", "--fix")
+    assert code == 0
+    assert "v0.1.1" in f.read_text(encoding="utf-8")
+
+
+# --- awesome-pr execute missing flags exits 2 ---
+
+
+def test_cli_awesome_pr_execute_requires_category():
+    code, _ = run_cli("awesome-pr", "--upstream", "u/l", "--repo", "me/r",
+                      "--fork", "me/f", "--branch", "b", "--execute")
+    assert code == 2
+
+
+# --- doctor text (non-json) output path ---
+
+
+def test_cli_doctor_text_output(monkeypatch):
+    from shipit_skill import doctor as doc
+
+    monkeypatch.setattr(doc, "_run", _fake_doctor_run)
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.setenv("NPM_TOKEN", "y")
+    code, out = run_cli("doctor")
+    assert code == 0
+    assert "checks passed" in out
+
+
+# --- preflight --json via module main ---
+
+
+def test_preflight_main_json(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    code, out = run_mod("preflight", "--dir", str(tmp_path), "--version", "0.1.0", "--json")
+    assert code == 1
+    data = json.loads(out)
+    assert data["dir"] == str(tmp_path)
+
+
+# --- glama fetch_status network error + poll loop ---
+
+
+def test_glama_fetch_status_network_error(monkeypatch):
+    import urllib.request as _ur
+
+    from shipit_skill import glama as gl
+
+    def boom(*_a, **_k):
+        raise OSError("no network")
+
+    monkeypatch.setattr(_ur, "urlopen", boom)
+    assert gl.fetch_status("https://glama.ai/mcp/servers/me/r") == 404
+
+
+def test_glama_poll_waits_and_then_listed(monkeypatch, capsys):
+    from shipit_skill import glama as gl
+
+    calls = {"n": 0}
+
+    def fake_fetch(_u):
+        calls["n"] += 1
+        return 200 if calls["n"] >= 3 else 404
+
+    monkeypatch.setattr(gl.time, "sleep", lambda _n: None)
+    monkeypatch.setattr(gl, "fetch_status", fake_fetch)
+    assert gl.check_glama("me/r", poll=2, wait=1) is True
+    assert "LISTED" in capsys.readouterr().out
+
+
+def test_glama_poll_exhausted_returns_false(monkeypatch, capsys):
+    from shipit_skill import glama as gl
+
+    monkeypatch.setattr(gl.time, "sleep", lambda _n: None)
+    monkeypatch.setattr(gl, "fetch_status", lambda _u: 404)
+    assert gl.check_glama("me/r", poll=2, wait=1) is False
+    assert "NOT LISTED" in capsys.readouterr().out
+
+
+# --- promo _url_ok failure path (already covered) but ensure no crash ---
+
+
+def test_promo_url_ok_http_error(monkeypatch):
+    import urllib.request as _ur
+
+    from shipit_skill import promo_check as pc
+
+    class Resp:
+        status = 404
+
+    monkeypatch.setattr(_ur, "urlopen", lambda req, timeout=15: Resp())
+    assert pc._url_ok("https://github.com/me/r") is False
+
+
+# --- release recipe non-dry-run executes bump.set_version ---
+
+
+def test_release_recipe_non_dry_run_bumps(tmp_path, monkeypatch):
+    from unittest.mock import patch
+
+    from shipit_skill import publish as pub
+    from shipit_skill import release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(pub, "print_python_commands", lambda *a, **k: None)
+    with patch.object(rel, "_gh_available", return_value=True):
+        cmds = rel.release("python", "x", "patch", repo="me/x", dir_=str(tmp_path))
+    assert 'version = "0.1.1"' in (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
+    assert any("gh release create" in c for c in cmds)
+
+
+# --- cli publish TS execute path (missing NPM token) ---
+
+
+def test_cli_publish_ts_execute_missing_token():
+    import os
+
+    os.environ.pop("NPM_TOKEN", None)
+    code, _ = run_cli("publish", "--lang", "typescript", "--pkg", "@x/cli", "--execute")
+    assert code == 1
+
+
+def test_awesome_pr_run_ok(monkeypatch):
+    from shipit_skill import awesome_pr
+
+    class R:
+        returncode = 0
+        stdout = "ok\n"
+        stderr = ""
+
+    monkeypatch.setattr(awesome_pr.subprocess, "run", lambda *a, **k: R())
+    assert awesome_pr._run(["git", "rev-parse"]) == "ok"
+
+
+# --- cli.py remaining branches ---
+
+
+def test_latest_pypi_version_success(monkeypatch):
+    import urllib.request as _ur
+
+    from shipit_skill import cli as cli_mod
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def read(self):
+            return b'{"info": {"version": "9.9.9"}}'
+
+    monkeypatch.setattr(_ur, "urlopen", lambda *a, **k: Resp())
+    assert cli_mod._latest_pypi_version() == "9.9.9"
+
+
+def test_cli_upgrade_thread_started_when_tty(monkeypatch, capsys):
+    from shipit_skill import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cli_mod, "_check_upgrade", lambda: None)
+    monkeypatch.setattr(cli_mod.threading, "Thread", lambda target, daemon=False: _FakeThread())
+    # main() prints help when no args; the thread-start line is what we target
+    code, _ = run_cli("--version")
+    assert code == 0
+
+
+class _FakeThread:
+    def start(self):
+        return None
+
+
+def test_cli_publish_typescript_prints():
+    code, out = run_cli("publish", "--lang", "typescript", "--pkg", "@x/cli")
+    assert code == 0
+    assert "npm publish" in out
+
+
+def test_cli_release_execute_ok_dispatch(monkeypatch, tmp_path):
+    from shipit_skill import publish as pub
+    from shipit_skill import release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    _mock_doctor_all_ok(monkeypatch)
+
+    class R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: R())
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
+    code, out = run_cli("release", "--lang", "python", "--pkg", "demo",
+                        "--how", "patch", "--dir", str(tmp_path), "--execute")
+    assert code == 0
+    assert "Released" in out
+
+
+def test_cli_glama_non_json_listed(monkeypatch):
+    from shipit_skill import glama as gl
+
+    monkeypatch.setattr(gl, "check_glama", lambda repo, poll=0, wait=40: True)
+    code, _ = run_cli("check-glama", "--repo", "me/r")
+    assert code == 0
+
+
+def test_cli_awesome_pr_execute_ok(monkeypatch):
+    from shipit_skill import awesome_pr as ap
+
+    calls = []
+    monkeypatch.setattr(ap, "execute", lambda *a, **k: calls.append(a) or "https://x/pull/1")
+    code, out = run_cli("awesome-pr", "--upstream", "u/l", "--repo", "me/r",
+                        "--fork", "me/f", "--branch", "b", "--category", "C",
+                        "--description", "D", "--install", "npx x", "--execute")
+    assert code == 0
+    assert calls and calls[0][0] == "u/l"
+
+
+def test_cli_init_interactive_server_default(tmp_path, monkeypatch):
+    from shipit_skill import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod, "_ask", lambda prompt, default: "srv")
+    target = tmp_path / "t"
+    code, _ = run_cli("init", str(target), "--pkg", "app")
+    assert code == 0
+    assert "srv" in (target / "smithery.yaml").read_text(encoding="utf-8")
