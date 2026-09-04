@@ -1267,3 +1267,82 @@ def test_glama_poll_success_via_main(monkeypatch, capsys, tmp_path):
                         "--add-badge", "--readme", str(readme))
     assert code == 0
     assert "badges/score.svg" in readme.read_text(encoding="utf-8")
+
+
+# --- release.py gaps ---
+
+
+def test_release_main_execute_dispatch(monkeypatch, tmp_path):
+    from shipit_skill import publish as pub
+    from shipit_skill import release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: None)
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
+    code, out = run_mod("release", "--lang", "python", "--pkg", "demo",
+                        "--how", "patch", "--dir", str(tmp_path), "--execute")
+    assert code == 0
+    assert "Released" in out
+
+
+def test_gh_available_false(monkeypatch):
+    from shipit_skill import release as rel
+
+    monkeypatch.setattr(rel.subprocess, "run", _raise_fnf)
+    assert rel._gh_available() is False
+
+
+# --- doctor gaps ---
+
+
+def test_doctor_run_exception(monkeypatch):
+    from shipit_skill import doctor as doc
+
+    monkeypatch.setattr(doc.subprocess, "run", _raise_fnf)
+    assert doc._run(["gh", "--version"]) == (1, "")
+
+
+def test_doctor_main_json_exit_0(monkeypatch):
+    from shipit_skill import doctor as doc
+
+    monkeypatch.setattr(doc, "_run", _fake_doctor_run)
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.setenv("NPM_TOKEN", "y")
+    code, out = run_mod("doctor", "--json")
+    assert code == 0
+    assert json.loads(out)["ok"] is True
+
+
+# --- promo_check gaps ---
+
+
+def test_promo_check_report_json_ok(tmp_path):
+    (tmp_path / "post.md").write_text("install v0.1.1\n", encoding="utf-8")
+    code, out = run_mod("promo_check", "--dir", str(tmp_path), "--version", "0.1.1",
+                        "--no-links", "--report")
+    assert code == 0
+    data = json.loads(out)
+    assert data["ok"] is True
+
+
+def test_promo_check_report_json_errors(tmp_path):
+    (tmp_path / "post.md").write_text("install v0.1.0\n", encoding="utf-8")
+    code, out = run_mod("promo_check", "--dir", str(tmp_path), "--version", "0.1.1",
+                        "--no-links", "--report")
+    assert code == 1
+    data = json.loads(out)
+    assert data["ok"] is False
+    assert data["errors"]
+
+
+def test_promo_check_url_ok_exception(monkeypatch):
+    from shipit_skill import promo_check as pc
+
+    def boom(_url):
+        raise OSError("no network")
+
+    monkeypatch.setattr(pc.urllib.request, "urlopen", boom)
+    assert pc._url_ok("https://github.com/me/r") is False
