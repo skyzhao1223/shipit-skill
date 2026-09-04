@@ -1102,6 +1102,8 @@ def test_doctor_json_output(monkeypatch):
     from shipit_skill import doctor as doc
 
     monkeypatch.setattr(doc, "_run", _fake_doctor_run)
+    monkeypatch.setattr(doc, "_importable", lambda m: True)
+    monkeypatch.setattr(doc, "_which", lambda b: True)
     monkeypatch.setenv("PYPI_TOKEN", "x")
     monkeypatch.setenv("NPM_TOKEN", "y")
     code, out = run_mod("doctor", "--json")
@@ -1115,6 +1117,8 @@ def test_cli_doctor_dispatch(monkeypatch):
     from shipit_skill import doctor as doc
 
     monkeypatch.setattr(doc, "_run", _fake_doctor_run)
+    monkeypatch.setattr(doc, "_importable", lambda m: True)
+    monkeypatch.setattr(doc, "_which", lambda b: True)
     monkeypatch.setenv("PYPI_TOKEN", "x")
     monkeypatch.setenv("NPM_TOKEN", "y")
     code, out = run_cli("doctor", "--json")
@@ -1331,6 +1335,8 @@ def test_doctor_main_json_exit_0(monkeypatch):
     from shipit_skill import doctor as doc
 
     monkeypatch.setattr(doc, "_run", _fake_doctor_run)
+    monkeypatch.setattr(doc, "_importable", lambda m: True)
+    monkeypatch.setattr(doc, "_which", lambda b: True)
     monkeypatch.setenv("PYPI_TOKEN", "x")
     monkeypatch.setenv("NPM_TOKEN", "y")
     code, out = run_mod("doctor", "--json")
@@ -1589,6 +1595,8 @@ def test_cli_doctor_text_output(monkeypatch):
     from shipit_skill import doctor as doc
 
     monkeypatch.setattr(doc, "_run", _fake_doctor_run)
+    monkeypatch.setattr(doc, "_importable", lambda m: True)
+    monkeypatch.setattr(doc, "_which", lambda b: True)
     monkeypatch.setenv("PYPI_TOKEN", "x")
     monkeypatch.setenv("NPM_TOKEN", "y")
     code, out = run_cli("doctor")
@@ -2013,3 +2021,94 @@ def test_changelog_git_log_from_ref(monkeypatch):
 
     monkeypatch.setattr(changelog.subprocess, "run", lambda *a, **k: R())
     assert changelog._git_log("v0.6.0") == ["feat: x", "fix: y"]
+
+
+def test_changelog_git_log_failure(monkeypatch):
+    from shipit_skill import changelog
+
+    class R:
+        returncode = 1
+        stdout = ""
+        stderr = "no repo"
+
+    monkeypatch.setattr(changelog.subprocess, "run", lambda *a, **k: R())
+    with pytest.raises(SystemExit):
+        changelog._git_log("v0.6.0")
+
+
+def test_changelog_last_tag_none(monkeypatch):
+    from shipit_skill import changelog
+
+    class R:
+        returncode = 1
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(changelog.subprocess, "run", lambda *a, **k: R())
+    assert changelog.last_tag() is None
+
+
+def test_verify_typescript_smoke_failure(monkeypatch):
+    import json as _json
+
+    from shipit_skill import publish as pub
+
+    class R:
+        returncode = 0
+        stdout = _json.dumps([{"filename": "demo.tgz"}])
+        stderr = ""
+
+    results = {"n": 0}
+
+    def fake_run(*a, **k):
+        results["n"] += 1
+        if results["n"] >= 4:
+            return type("R2", (), {"returncode": 1, "stdout": "", "stderr": "no bin"})()
+        return R()
+
+    monkeypatch.setattr(pub.subprocess, "run", fake_run)
+    monkeypatch.setattr(pub.tempfile, "mkdtemp", lambda prefix="": "/tmp/ts-x")
+    monkeypatch.chdir("/tmp")
+    with pytest.raises(SystemExit):
+        pub.verify_typescript("demo")
+
+
+def test_cli_init_force_overwrites_missing_check():
+    # exercise the init check_files existance path again with different target
+    import tempfile as _t
+
+    from pathlib import Path as _P
+
+    d = _t.mkdtemp()
+    run_cli("init", d, "--server", "s", "--pkg", "p", "--author", "A")
+    code, out = run_cli("init", d, "--server", "s", "--pkg", "p", "--force")
+    assert code == 0
+    assert "wrote" in out
+
+
+def test_publish_main_execute_ts_with_verify(monkeypatch):
+    from shipit_skill import publish as pub
+
+    monkeypatch.setenv("NPM_TOKEN", "x")
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
+    monkeypatch.setattr(pub, "verify_typescript", lambda pkg: None)
+    code, _ = run_mod("publish", "--lang", "typescript", "--pkg", "demo", "--execute")
+    assert code == 0
+
+
+def test_changelog_cli_write_new_file(tmp_path):
+    code, out = run_cli("changelog", "--version", "0.8.0", "--write", "--dir", str(tmp_path))
+    assert code == 0
+    ch = tmp_path / "CHANGELOG.md"
+    assert ch.exists()
+    assert "## [0.8.0]" in ch.read_text(encoding="utf-8")
+
+
+def test_changelog_module_write_existing(tmp_path):
+    ch = tmp_path / "CHANGELOG.md"
+    ch.write_text("# Changelog\n\n## [0.1.0] - old\n", encoding="utf-8")
+    code, _ = run_mod("changelog", "--version", "0.2.0", "--write", "--dir", str(tmp_path))
+    assert code == 0
+    text = ch.read_text(encoding="utf-8")
+    assert "## [0.2.0]" in text
+    assert "## [0.1.0]" in text
