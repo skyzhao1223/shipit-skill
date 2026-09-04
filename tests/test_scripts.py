@@ -185,3 +185,50 @@ def test_wheel_contains_skill_and_package():
     assert any(n.endswith("shipit_skill/__init__.py") for n in names)
     assert any("shipit_skill/templates/Dockerfile" in n for n in names)
     assert any("shipit_skill/templates/promo/README.md" in n for n in names)
+
+
+# --- new subcommands: preflight / bump / release ---
+
+
+def test_cli_preflight_reports_gaps(tmp_path: Path):
+    r = run_cli("preflight", "--dir", str(tmp_path), "--version", "0.1.0")
+    assert r.returncode == 1  # empty dir has gaps
+    assert "✗" in r.stdout
+    assert "gaps" in r.stdout
+
+
+def test_cli_preflight_ok_on_scaffolded(tmp_path: Path):
+    target = tmp_path / "ok"
+    run_cli("init", str(target), "--server", "demo", "--pkg", "demo")
+    (target / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    r = run_cli("preflight", "--dir", str(target), "--version", "0.1.0")
+    # Dockerfile/.dockerignore present, CI present, promo present, version matches.
+    # git remote missing → still exit 1, but the key gaps are closed.
+    assert "✓ CI workflow" in r.stdout
+    assert "✓ Dockerfile" in r.stdout
+    assert "✓ promo versions consistent" in r.stdout
+
+
+def test_cli_bump_dry_run(tmp_path: Path):
+    p = tmp_path / "pyproject.toml"
+    p.write_text('[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8")
+    r = run_cli("bump", "minor", "--dir", str(tmp_path), "--dry-run")
+    assert r.returncode == 0
+    assert "0.1.0 → 0.2.0" in r.stdout
+    assert "0.2.0" not in p.read_text(encoding="utf-8")  # dry-run didn't write
+
+
+def test_cli_bump_writes(tmp_path: Path):
+    p = tmp_path / "pyproject.toml"
+    p.write_text('[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8")
+    r = run_cli("bump", "patch", "--dir", str(tmp_path))
+    assert r.returncode == 0
+    assert 'version = "0.1.1"' in p.read_text(encoding="utf-8")
+
+
+def test_cli_release_dry_run():
+    r = run_cli("release", "--lang", "python", "--pkg", "demo", "--how", "patch", "--dry-run")
+    assert r.returncode == 0
+    assert "git tag v0.2.1" in r.stdout  # from 0.2.0 in repo? no — uses repo version

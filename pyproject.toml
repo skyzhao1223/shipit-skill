@@ -11,6 +11,7 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.4",
     "PyYAML>=6.0",
+    "pyright>=1.1.380",
 ]
 
 [project.scripts]
@@ -32,3 +33,8 @@ select = ["E", "F", "I", "W", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.9"
+typeCheckingMode = "basic"

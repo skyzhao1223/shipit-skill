@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Iterable
 
 
-def run_smoke(stream: object = None) -> bool:
+def run_smoke(stream: Iterable[str] | None = None) -> bool:
     """Parse MCP stdio responses and assert initialize + tools/list arrived."""
-    lines = stream if stream is not None else sys.stdin
+    lines: Iterable[str] = stream if stream is not None else sys.stdin
     seen_init = False
     seen_tools = False
     for line in lines:

@@ -1,0 +1,56 @@
+name: shipit-skill
+description: "Run shipit-skill commands in GitHub Actions (preflight, publish, check-promo)"
+branding:
+  icon: "rocket"
+  color: "green"
+
+inputs:
+  command:
+    description: "shipit-skill subcommand (preflight, publish, bump, release, check-promo, check-glama, awesome-pr, init)"
+    required: true
+  args:
+    description: "Extra arguments passed to the subcommand"
+    default: ""
+  lang:
+    description: "Target language (python/typescript) for publish/release"
+    default: ""
+  pkg:
+    description: "Package name for publish/release"
+    default: ""
+  version:
+    description: "Expected version for preflight/check-promo"
+    default: ""
+  repo:
+    description: "owner/name for online checks"
+    default: ""
+  PYPI_TOKEN:
+    description: "PyPI token (for publish with --verify)"
+    default: ""
+  NPM_TOKEN:
+    description: "NPM token (for TS publish)"
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install shipit-skill
+      shell: bash
+      run: pip install shipit-skill
+    - name: Run shipit-skill ${{ inputs.command }}
+      shell: bash
+      env:
+        PYPI_TOKEN: ${{ inputs.PYPI_TOKEN }}
+        NPM_TOKEN: ${{ inputs.NPM_TOKEN }}
+      run: |
+        set -euo pipefail
+        cmd="${{ inputs.command }}"
+        args="${{ inputs.args }}"
+        if [ -n "${{ inputs.lang }}" ]; then args="$args --lang ${{ inputs.lang }}"; fi
+        if [ -n "${{ inputs.pkg }}" ]; then args="$args --pkg ${{ inputs.pkg }}"; fi
+        if [ -n "${{ inputs.version }}" ]; then args="$args --version ${{ inputs.version }}"; fi
+        if [ -n "${{ inputs.repo }}" ]; then args="$args --repo ${{ inputs.repo }}"; fi
+        shipit-skill $cmd $args
