@@ -2077,8 +2077,6 @@ def test_cli_init_force_overwrites_missing_check():
     # exercise the init check_files existance path again with different target
     import tempfile as _t
 
-    from pathlib import Path as _P
-
     d = _t.mkdtemp()
     run_cli("init", d, "--server", "s", "--pkg", "p", "--author", "A")
     code, out = run_cli("init", d, "--server", "s", "--pkg", "p", "--force")
