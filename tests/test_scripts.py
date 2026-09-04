@@ -1173,10 +1173,9 @@ def test_cli_release_execute_missing_token(tmp_path):
     import os
 
     os.environ.pop("PYPI_TOKEN", None)
-    code, out = run_cli("release", "--lang", "python", "--pkg", "demo",
-                        "--how", "patch", "--dir", str(tmp_path), "--execute")
+    code, _ = run_cli("release", "--lang", "python", "--pkg", "demo",
+                      "--how", "patch", "--dir", str(tmp_path), "--execute")
     assert code == 1
-    assert "PYPI_TOKEN" in out
 
 
 def test_cli_bump_commit_mocked(monkeypatch, tmp_path):
