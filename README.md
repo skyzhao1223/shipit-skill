@@ -1,6 +1,8 @@
 # ⚙️ shipit-skill
 
 [![CI](https://github.com/skyzhao1223/shipit-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/skyzhao1223/shipit-skill/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/shipit-skill)](https://pypi.org/project/shipit-skill/)
+[![Downloads](https://img.shields.io/pypi/dm/shipit-skill)](https://pypi.org/project/shipit-skill/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Take an existing developer tool from "it works" to "published + listed + marketable" — one pass.**
@@ -49,6 +51,8 @@ boundary (what the agent runs vs. what needs a human/credential).
 [`examples/mcp-server-launch.md`](examples/mcp-server-launch.md) walks all four
 phases against a toy `hello-mcp` server — reproduce it locally to learn the
 pipeline before applying it to a real project.
+
+![shipit-skill demo](docs/shipit-skill-demo.gif)
 
 ## Development
 
