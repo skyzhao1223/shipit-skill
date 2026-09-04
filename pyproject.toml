@@ -10,6 +10,7 @@ requires-python = ">=3.9"
 dev = [
     "pytest>=7.0",
     "pytest-cov>=5.0",
+    "pytest-xdist>=3.0",
     "ruff>=0.4",
     "PyYAML>=6.0",
     "pyright>=1.1.380",
@@ -35,11 +36,15 @@ select = ["E", "F", "I", "W", "UP"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=src/shipit_skill --cov-context=test --cov-report=term-missing --cov-fail-under=93"
+addopts = "--cov=src/shipit_skill --cov-context=test --cov-report=term-missing --cov-fail-under=93 -n auto"
 
 [tool.coverage.run]
 branch = true
 source = ["src/shipit_skill"]
+parallel = true
+
+[tool.coverage.report]
+skip_covered = true
 
 [tool.pyright]
 include = ["src"]

@@ -190,6 +190,15 @@ def _cmd_bump(args: argparse.Namespace) -> None:
 
 def _cmd_release(args: argparse.Namespace) -> None:
     args.lang = args.lang or _detect_lang(args.dir)
+    if args.dry_run_notes:
+        old = release.bump.parse_version(args.dir)
+        new = (release.bump.bump(old, args.how)
+               if not args.how.startswith("set:") else args.how[4:])
+        tag = f"v{new}"
+        print(f"# next release: {tag}  (current {old})")
+        print("# --- release notes ---")
+        print(release.changelog_entry(args.dir, tag))
+        return
     if args.execute:
         release.execute(args.lang, args.pkg, args.how, args.repo, args.dir,
                         args.title, args.server)
@@ -390,6 +399,8 @@ def main() -> None:
     p_rel.add_argument("--server", help="MCP server name (python)")
     p_rel.add_argument("--title")
     p_rel.add_argument("--dry-run", action="store_true")
+    p_rel.add_argument("--dry-run-notes", action="store_true",
+                       help="preview tag + release notes without publishing")
     p_rel.add_argument("--execute", action="store_true", help="actually run the release")
     p_rel.set_defaults(fn=_cmd_release)
 

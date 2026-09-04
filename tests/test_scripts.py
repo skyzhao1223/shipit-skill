@@ -1427,7 +1427,7 @@ def test_changelog_entry_parses_section(tmp_path: Path):
         "## [0.1.0] - 2026-08-01\n",
         encoding="utf-8",
     )
-    body = rel._changelog_entry(str(tmp_path), "v0.2.0")
+    body = rel.changelog_entry(str(tmp_path), "v0.2.0")
     assert "add feature" in body
     assert "fix bug" in body
     assert "0.1.0" not in body
@@ -1436,7 +1436,7 @@ def test_changelog_entry_parses_section(tmp_path: Path):
 def test_changelog_entry_fallback_when_missing(tmp_path: Path):
     from shipit_skill import release as rel
 
-    body = rel._changelog_entry(str(tmp_path), "v0.9.0")
+    body = rel.changelog_entry(str(tmp_path), "v0.9.0")
     assert "v0.9.0" in body
 
 
@@ -2110,3 +2110,174 @@ def test_changelog_module_write_existing(tmp_path):
     text = ch.read_text(encoding="utf-8")
     assert "## [0.2.0]" in text
     assert "## [0.1.0]" in text
+
+
+# --- publish diagnose + retry ---
+
+
+def test_diagnose_file_exists():
+    from shipit_skill import publish as pub
+
+    hint = pub.diagnose("python", "ERROR HTTPError: 400 Bad Request\nFile already exists")
+    assert hint and "already on the registry" in hint
+
+
+def test_diagnose_bad_token():
+    from shipit_skill import publish as pub
+
+    hint = pub.diagnose("python", "403 Invalid or non-existent authentication information")
+    assert hint and "bad token" in hint
+
+
+def test_diagnose_unknown():
+    from shipit_skill import publish as pub
+
+    assert pub.diagnose("python", "weird output") is None
+
+
+def test_diagnose_transient():
+    from shipit_skill import publish as pub
+
+    hint = pub.diagnose("python", "timed out after 10 seconds")
+    assert hint and "network" in hint
+
+
+def test_diagnose_npm_no_bin():
+    from shipit_skill import publish as pub
+
+    hint = pub.diagnose("typescript", "no bin entry found")
+    assert hint and "bin" in hint
+
+
+def test_run_with_retry_permanent_fails_fast(monkeypatch):
+    import subprocess as sp
+
+    from shipit_skill import publish as pub
+
+    calls = {"n": 0}
+
+    def boom(cmd, check=False, env=None):
+        calls["n"] += 1
+        raise sp.CalledProcessError(1, cmd, stderr="File already exists")
+
+    monkeypatch.setattr(pub.subprocess, "run", boom)
+    with pytest.raises(sp.CalledProcessError):
+        pub._run_with_retry(["twine"], tries=3, backoff=0.01)
+    assert calls["n"] == 1  # no retry on permanent error
+
+
+def test_run_with_retry_transient_retries(monkeypatch):
+    import subprocess as sp
+    import time as _t
+
+    from shipit_skill import publish as pub
+
+    calls = {"n": 0}
+
+    def boom(cmd, check=False, env=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise sp.CalledProcessError(1, cmd, stderr="connection reset")
+        return None
+
+    monkeypatch.setattr(pub.subprocess, "run", boom)
+    monkeypatch.setattr(_t, "sleep", lambda _n: None)
+    pub._run_with_retry(["twine"], tries=3, backoff=0.01)
+    assert calls["n"] == 3
+
+
+# --- release --dry-run-notes ---
+
+
+def test_release_dry_run_notes_module(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [0.2.0] - 2026-09-04\n\n- feature\n", encoding="utf-8"
+    )
+    code, out = run_mod("release", "--lang", "python", "--pkg", "demo",
+                        "--how", "minor", "--dir", str(tmp_path), "--dry-run-notes")
+    assert code == 0
+    assert "v0.2.0" in out
+    assert "- feature" in out
+
+
+def test_cli_release_dry_run_notes(tmp_path):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "1.2.3"\n', encoding="utf-8"
+    )
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [2.0.0] - 2026-09-04\n\n- breaking\n", encoding="utf-8"
+    )
+    code, out = run_cli("release", "--lang", "python", "--pkg", "demo",
+                        "--how", "major", "--dir", str(tmp_path), "--dry-run-notes")
+    assert code == 0
+    assert "v2.0.0" in out
+    assert "- breaking" in out
+
+
+# --- publish edge branches ---
+
+
+def test_diagnose_conflict():
+    from shipit_skill import publish as pub
+
+    hint = pub.diagnose("python", "409 Conflict")
+    assert hint and "conflict" in hint
+
+
+def test_diagnose_python_no_hint():
+    from shipit_skill import publish as pub
+
+    assert pub.diagnose("python", "some weird twine error") is None
+
+
+def test_run_with_retry_exhausts(monkeypatch):
+    import subprocess as sp
+    import time as _t
+
+    from shipit_skill import publish as pub
+
+    calls = {"n": 0}
+
+    def boom(cmd, check=False, env=None):
+        calls["n"] += 1
+        raise sp.CalledProcessError(1, cmd, stderr="connection reset")
+
+    monkeypatch.setattr(pub.subprocess, "run", boom)
+    monkeypatch.setattr(_t, "sleep", lambda _n: None)
+    with pytest.raises(sp.CalledProcessError):
+        pub._run_with_retry(["twine"], tries=3, backoff=0.01)
+    assert calls["n"] == 3
+
+
+def test_publish_main_python_execute_with_upload_error(monkeypatch, tmp_path):
+    import subprocess as sp
+
+    from shipit_skill import publish as pub
+
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist" / "a-0.1.0.whl").write_bytes(b"x")
+
+    def fake_run(cmd, check=False, env=None):
+        if "twine" in cmd:
+            raise sp.CalledProcessError(1, cmd, stderr="File already exists")
+        return None
+
+    monkeypatch.setattr(pub.subprocess, "run", fake_run)
+    import contextlib
+    import io
+    import sys
+
+    buf = io.StringIO()
+    old_argv = sys.argv
+    sys.argv = ["shipit-skill", "--lang", "python", "--pkg", "demo", "--execute"]
+    try:
+        with contextlib.redirect_stdout(buf), pytest.raises(sp.CalledProcessError):
+            pub.main()
+    finally:
+        sys.argv = old_argv
+    assert "hint:" in buf.getvalue()

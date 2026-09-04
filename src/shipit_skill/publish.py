@@ -24,6 +24,73 @@ def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+_PERMANENT_MARKERS = (
+    "file already exists",
+    "File already exists",
+    "403",
+    "Invalid or non-existent authentication",
+    "invalid or non-existent",
+    "409",
+    "Version already exists",
+    "E404",
+    "npm ERR! 404",
+    "Unauthorized",
+)
+
+
+def _is_permanent(output: str) -> bool:
+    return any(marker.lower() in output.lower() for marker in _PERMANENT_MARKERS)
+
+
+def _run_with_retry(cmd: list[str], *, tries: int = 3, backoff: float = 2.0,
+                    env: dict[str, str] | None = None) -> None:
+    """Run an upload command, retrying transient failures with backoff.
+
+    Permanent errors (file already exists, auth failures, 403/404/409) are
+    surfaced immediately without retries.
+    """
+    import time
+
+    for attempt in range(1, tries + 1):
+        try:
+            subprocess.run(cmd, check=True, env=env)
+            return
+        except subprocess.CalledProcessError as e:
+            output = (e.stderr or "") if isinstance(e.stderr, str) else ""
+            if _is_permanent(output):
+                raise
+            if attempt < tries:
+                print(f"  ⚠ upload attempt {attempt}/{tries} failed — retrying in "
+                      f"{backoff * attempt}s")
+                time.sleep(backoff * attempt)
+            else:
+                raise
+
+
+def diagnose(lang: str, output: str) -> str | None:
+    """Return a one-line actionable hint for a failed publish, or None."""
+    low = output.lower()
+    if "file already exists" in low or "already exists" in low:
+        return ("version already on the registry — bump the version "
+                "(release --how patch) or it's a re-run")
+    if "403" in low or "invalid or non-existent authentication" in low:
+        return ("bad token — PyPI tokens start 'pypi-'; scope it to the package "
+                "with Upload permission")
+    if "401" in low or "unauthorized" in low:
+        return ("token rejected — check NPM_TOKEN scope / bypass-2FA, "
+                "or PYPI_TOKEN upload scope")
+    if "404" in low:
+        return ("not found — scoped npm package? the org must exist; for PyPI "
+                "the package name may be taken")
+    if "409" in low or "conflict" in low:
+        return "conflict — the version/tag already exists; re-run will skip"
+    if "network" in low or "timed out" in low or "connection" in low:
+        return "transient network failure — re-run the same command to retry"
+    if lang == "typescript" and "no bin" in low:
+        return "packaged CLI has no bin entry — add 'bin' to package.json"
+    return None
+
+
 def _build() -> None:
     import shutil
 
@@ -78,13 +145,18 @@ def execute_python(pkg: str, server: str | None) -> None:
     if not token:
         raise SystemExit("PYPI_TOKEN env var required for --execute")
     _build()
-    _run([
-        sys.executable, "-m", "twine", "upload",
-        "--repository-url", "https://upload.pypi.org/legacy/",
-        "--username", "__token__", "--password", token,
-        *sorted(str(p) for p in Path("dist").glob("*.tar.gz")),
-        *sorted(str(p) for p in Path("dist").glob("*.whl")),
-    ])
+    try:
+        _run_with_retry([
+            sys.executable, "-m", "twine", "upload",
+            "--repository-url", "https://upload.pypi.org/legacy/",
+            "--username", "__token__", "--password", token,
+            *sorted(str(p) for p in Path("dist").glob("*.tar.gz")),
+            *sorted(str(p) for p in Path("dist").glob("*.whl")),
+        ])
+    except subprocess.CalledProcessError as e:
+        hint = diagnose("python", e.stderr or "")
+        print(f"  ✗ hint: {hint}" if hint else "  ✗ (no hint — see full error above)")
+        raise
     verify_python(pkg, server, pkg)
 
 
@@ -128,10 +200,16 @@ def execute_typescript(pkg: str = "app") -> None:
     if not token:
         raise SystemExit("NPM_TOKEN env var required for --execute")
     env = {**os.environ, "NPM_TOKEN": token}
-    subprocess.run(
-        ["npm", "publish", "--//registry.npmjs.org/:_authToken=" + token, "--access", "public"],
-        check=True, env=env,
-    )
+    try:
+        _run_with_retry(
+            ["npm", "publish", "--//registry.npmjs.org/:_authToken=" + token,
+             "--access", "public"],
+            env=env,
+        )
+    except subprocess.CalledProcessError as e:
+        hint = diagnose("typescript", e.stderr or "")
+        print(f"  ✗ hint: {hint}" if hint else "  ✗ (no hint — see full error above)")
+        raise
     verify_typescript(pkg)
 
 

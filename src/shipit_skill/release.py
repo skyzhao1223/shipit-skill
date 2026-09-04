@@ -96,7 +96,7 @@ def _remote_tag_exists(tag: str) -> bool:
         return False
 
 
-def _changelog_entry(dir_: str, tag: str) -> str:
+def changelog_entry(dir_: str, tag: str) -> str:
     """Extract the newest CHANGELOG.md entry for `tag` (or a generic body)."""
     ch = Path(dir_) / "CHANGELOG.md"
     if not ch.exists():
@@ -172,6 +172,9 @@ def execute(
             publish.execute_typescript(pkg)
     except Exception as e:
         print(f"\n❌ publish failed: {e}")
+        hint = publish.diagnose(lang, str(e))
+        if hint:
+            print(f"  ✗ hint: {hint}")
         print("Rolling back the 'chore: release' commit (nothing was pushed/tagged)…")
         subprocess.run(["git", "reset", "--soft", "HEAD~1"], check=True)
         print("✓ rolled back — version bump is staged. Next steps:")
@@ -201,7 +204,7 @@ def execute(
         else:
             print(f"[5/7] GitHub Release {tag}")
             release_title = title or f"{pkg} {tag}"
-            notes = _changelog_entry(dir_, tag)
+            notes = changelog_entry(dir_, tag)
             body_path = Path(dir_) / ".release-notes.tmp"
             body_path.write_text(notes, encoding="utf-8")
             try:
@@ -238,8 +241,19 @@ def main() -> None:
     ap.add_argument("--server", help="MCP server name (python, for --verify)")
     ap.add_argument("--title")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--dry-run-notes", action="store_true",
+                    help="preview the tag + release notes without publishing")
     ap.add_argument("--execute", action="store_true", help="actually run the release")
     args = ap.parse_args()
+
+    if args.dry_run_notes:
+        old = bump.parse_version(args.dir)
+        new = bump.bump(old, args.how) if not args.how.startswith("set:") else args.how[4:]
+        tag = f"v{new}"
+        print(f"# next release: {tag}  (current {old})")
+        print("# --- release notes ---")
+        print(changelog_entry(args.dir, tag))
+        return
 
     if args.execute:
         execute(args.lang, args.pkg, args.how, args.repo, args.dir, args.title, args.server)

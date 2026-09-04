@@ -56,9 +56,17 @@ pipeline before applying it to a real project.
 
 ## Automate releases (GitHub Action)
 
-`shipit-skill release --execute` bumps, builds, tags, pushes, opens a GitHub
-Release, and publishes to PyPI in one shot (token from `PYPI_TOKEN` env). Hook
-it up as a manual GitHub Actions job:
+`shipit-skill release --execute` runs a **doctor gate**, bumps, builds, publishes
+to PyPI, then tags + opens a GitHub Release (notes from CHANGELOG) — all from a
+token in `PYPI_TOKEN` env. Re-running is safe (existing tags/releases are
+skipped), and a failed publish rolls back the commit instead of leaving a
+dangling release. Preview what it will do without touching anything:
+
+```bash
+shipit-skill release --lang python --pkg your-tool --how minor --dry-run-notes
+```
+
+Hook it up as a manual GitHub Actions job:
 
 ```yaml
 # .github/workflows/release.yml
@@ -77,23 +85,28 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install -e ".[dev]" build twine
+      - run: shipit-skill doctor   # fail fast on missing prereqs
+        env: {PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}}
       - run: shipit-skill release --lang python --pkg your-tool \
              --how ${{ inputs.how }} --repo owner/your-tool --execute
         env:
           PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
 ```
 
-Other one-shot commands with `--execute`: `publish` (real PyPI/NPM upload),
-`bump --commit` (bump + git commit), and `awesome-pr --execute` (opens the PR
-via `gh`). Everything else stays print-only until you pass `--execute`.
+Other one-shot commands with `--execute`: `publish` (real PyPI/NPM upload +
+fresh-install verify, auto-retry with diagnostic hints), `bump --commit`
+(bump + git commit), and `awesome-pr --execute` (opens the PR via `gh`).
+`changelog --version X.Y.Z` generates a CHANGELOG entry from your git log.
+`--lang` is auto-detected from `pyproject.toml` / `package.json`.
 
 ## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 80 tests, coverage ≥ 85%
+pytest -q          # 179 tests, coverage ≥ 93%, parallel (-n auto)
 ruff check .       # lint
 pyright            # type check (strict)
+```
 ```
 
 ## The scars (why this exists)
