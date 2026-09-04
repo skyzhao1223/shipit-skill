@@ -16,6 +16,7 @@ from shipit_skill import (
     bump,
     ci,
     cli,
+    doctor,
     glama,
     mcp_smoke,
     preflight,
@@ -55,6 +56,8 @@ def run_mod(module: str, *args: str) -> tuple[int, str]:
                 glama.main()
             elif module == "cli":
                 cli.main()
+            elif module == "doctor":
+                doctor.main()
             elif module == "awesome_pr":
                 awesome_pr.main()
             elif module == "mcp_smoke":
@@ -370,14 +373,9 @@ def test_release_execute_requires_token(tmp_path):
     os.environ.pop("PYPI_TOKEN", None)
     from unittest.mock import patch
 
-    with patch("subprocess.run") as mock_run:
-        # git commands would run first; force a bump/commit chain that halts at publish
-        mock_run.return_value = None
-        # Call release.execute — it will bump + git + build then publish.execute_python
-        # which raises SystemExit for missing token. The git/build steps use subprocess.run
-        # (mocked) so no real side effects.
-        from shipit_skill import release as rel
+    from shipit_skill import release as rel
 
+    with patch("subprocess.run", return_value=None):
         with pytest.raises(SystemExit) as ei:
             rel.execute("python", "demo", "patch", repo="me/demo", dir_=str(tmp_path))
         assert "PYPI_TOKEN" in str(ei.value)
@@ -993,3 +991,209 @@ def test_publish_execute_cleans_stale_dist(monkeypatch, tmp_path: Path):
     pub.execute_python("demo", None)
     assert not (tmp_path / "dist" / "old-0.3.1.whl").exists()
     assert any("build" in c and "-m" in c and c[-1] == "build" for c in cmds)
+
+
+def test_release_execute_rolls_back_on_publish_failure(monkeypatch, tmp_path):
+    from shipit_skill import publish as pub
+    from shipit_skill import release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("PYPI_TOKEN", "pypi-abc")
+
+    cmds = []
+
+    def fake_run(cmd, **kw):
+        cmds.append(cmd)
+        return None
+
+    def boom_publish(*a, **k):
+        raise RuntimeError("twine upload failed")
+
+    monkeypatch.setattr(rel.subprocess, "run", fake_run)
+    monkeypatch.setattr(pub, "execute_python", boom_publish)
+    with pytest.raises(SystemExit) as ei:
+        rel.execute("python", "demo", "patch", repo="me/demo", dir_=str(tmp_path))
+    assert ei.value.code == 1
+    # rollback undoes the release commit; tag never created before publish
+    assert any(c[1] == "reset" and "HEAD~1" in c for c in cmds)
+
+
+def test_ci_generate_release_yaml():
+    yml = ci.generate_release("python", "demo")
+    assert "workflow_dispatch" in yml
+    assert "secrets.PYPI_TOKEN" in yml
+    assert "--execute" in yml
+    code, out = run_mod("ci", "--lang", "python", "--pkg", "demo", "--release")
+    assert code == 0
+    assert "workflow_dispatch" in out
+    assert "PYPI_TOKEN" in out
+
+
+def test_cli_ci_release_writes_file(tmp_path: Path):
+    out = tmp_path / "release.yml"
+    code, _ = run_cli("ci", "--lang", "python", "--pkg", "demo", "--release",
+                      "--write", str(out))
+    assert code == 0
+    assert out.exists()
+    assert "workflow_dispatch" in out.read_text(encoding="utf-8")
+
+
+def test_cli_ci_release_flag(tmp_path: Path):
+    out = tmp_path / "release.yml"
+    code, _ = run_cli("ci", "--lang", "python", "--pkg", "demo", "--release",
+                      "--write", str(out))
+    assert code == 0
+    assert "workflow_dispatch" in out.read_text(encoding="utf-8")
+
+
+# --- doctor ---
+
+
+def test_doctor_checks_list(monkeypatch):
+    from shipit_skill import doctor as doc
+
+    monkeypatch.setattr(doc, "_run", lambda cmd: (0, "ok"))
+    checks = doc.doctor()
+    names = {c["name"] for c in checks}
+    assert "gh CLI installed + authed" in names
+    assert "PYPI_TOKEN set" in names
+    assert "version" in names
+
+
+def test_doctor_exits_1_when_gaps(monkeypatch):
+    code, _ = run_mod("doctor")
+    assert code == 1  # no tokens set in test env
+    assert "checks passed" in _ or "Ready" in _
+
+
+def _fake_doctor_run(cmd):
+    if cmd[0] == "git" and "rev-parse" in cmd:
+        return 0, "main"
+    if cmd[0] == "git" and "status" in cmd:
+        return 0, ""
+    return 0, "ok"
+
+
+def test_doctor_json_output(monkeypatch):
+    from shipit_skill import doctor as doc
+
+    monkeypatch.setattr(doc, "_run", _fake_doctor_run)
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.setenv("NPM_TOKEN", "y")
+    code, out = run_mod("doctor", "--json")
+    assert code == 0
+    data = json.loads(out)
+    assert "checks" in data
+    assert all("ok" in c and "name" in c for c in data["checks"])
+
+
+def test_cli_doctor_dispatch(monkeypatch):
+    from shipit_skill import doctor as doc
+
+    monkeypatch.setattr(doc, "_run", _fake_doctor_run)
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.setenv("NPM_TOKEN", "y")
+    code, out = run_cli("doctor", "--json")
+    assert code == 0
+    data = json.loads(out)
+    assert data["checks"]
+
+
+# --- check-glama --json ---
+
+
+def test_cli_glama_json_unlisted(monkeypatch):
+    from shipit_skill import glama as glama_mod
+
+    monkeypatch.setattr(glama_mod, "check_glama", lambda repo, poll=0, wait=40: False)
+    code, out = run_cli("check-glama", "--repo", "me/r", "--json")
+    assert code == 1
+    data = json.loads(out)
+    assert data["listed"] is False
+
+
+# --- publish verify_python server branch ---
+
+
+def test_publish_verify_python_with_server(monkeypatch, capsys):
+    from shipit_skill import publish as pub
+
+    cmds = []
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: cmds.append(c))
+    pub.verify_python("demo", server="demo-server", extras="demo")
+    assert any(c[0] == "bash" for c in cmds)
+    assert "demo-server" in str(cmds[-1])
+    assert "fresh-install OK" in capsys.readouterr().out
+
+
+# --- _ask interactive path ---
+
+
+def test_cli_ask_interactive(monkeypatch):
+    from shipit_skill import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt: "hello")
+    assert cli_mod._ask("server name", "default") == "hello"
+
+
+def test_cli_ask_eof(monkeypatch):
+    from shipit_skill import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod.sys.stdin, "isatty", lambda: True)
+
+    def boom(_prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", boom)
+    assert cli_mod._ask("server name", "default") == "default"
+
+
+def test_cli_ask_not_tty(monkeypatch):
+    from shipit_skill import cli as cli_mod
+
+    monkeypatch.setattr(cli_mod.sys.stdin, "isatty", lambda: False)
+    assert cli_mod._ask("x", "default") == "default"
+
+
+# --- CLI publish / release --execute dispatch (missing token) ---
+
+
+def test_cli_publish_execute_missing_token():
+    import os
+
+    os.environ.pop("PYPI_TOKEN", None)
+    code, _ = run_cli("publish", "--lang", "python", "--pkg", "demo", "--execute")
+    assert code == 1
+
+
+def test_cli_release_execute_missing_token(tmp_path):
+    import os
+
+    os.environ.pop("PYPI_TOKEN", None)
+    code, out = run_cli("release", "--lang", "python", "--pkg", "demo",
+                        "--how", "patch", "--dir", str(tmp_path), "--execute")
+    assert code == 1
+    assert "PYPI_TOKEN" in out
+
+
+def test_cli_bump_commit_mocked(monkeypatch, tmp_path):
+    from shipit_skill import cli as cli_mod, bump as bump_mod
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setattr(bump_mod.subprocess, "run", lambda c, **kw: None)
+    code, out = run_cli("bump", "patch", "--dir", str(tmp_path), "--commit")
+    assert code == 0
+    assert "0.1.1" in out
+
+
+# --- glama add_badge missing README ---
+
+
+def test_glama_add_badge_missing_readme(tmp_path):
+    ok = glama.add_badge("me/r", str(tmp_path / "nope.md"))
+    assert ok is False

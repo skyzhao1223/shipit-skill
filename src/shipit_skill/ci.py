@@ -105,6 +105,44 @@ def generate_ci(
     )
 
 
+RELEASE_YML = """name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      how:
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]" build twine
+      - name: run shipit-skill release
+        run: >
+          shipit-skill release --lang {lang} --pkg {pkg}
+          --how ${{{{ inputs.how }}}} --repo ${{{{ github.repository }}}}
+          --execute
+        env:
+          PYPI_TOKEN: ${{{{ secrets.PYPI_TOKEN }}}}
+"""
+
+
+def generate_release(lang: str, pkg: str) -> str:
+    """Generate a release.yml workflow that runs `release --execute` manually."""
+    return RELEASE_YML.format(lang=lang, pkg=pkg)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lang", required=True, choices=["python", "typescript"])
@@ -112,7 +150,12 @@ def main() -> None:
     ap.add_argument("--pkg", default="app", help="Docker image / package name")
     ap.add_argument("--py-versions", default='"3.9", "3.12"', help="comma list")
     ap.add_argument("--base-py", default="3.9", help="base interpreter for extras-free install")
+    ap.add_argument("--release", action="store_true", help="emit release.yml instead of ci.yml")
     args = ap.parse_args()
+
+    if args.release:
+        print(generate_release(args.lang, args.pkg))
+        return
 
     print(generate_ci(
         args.lang,

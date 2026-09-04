@@ -31,6 +31,7 @@ from shipit_skill import (
     awesome_pr,
     bump,
     ci,
+    doctor,
     glama,
     preflight,
     promo_check,
@@ -106,7 +107,10 @@ def _cmd_init(args: argparse.Namespace) -> None:
 
 
 def _cmd_ci(args: argparse.Namespace) -> None:
-    yaml = ci.generate_ci(args.lang, server=args.server, pkg=args.pkg)
+    if args.release:
+        yaml = ci.generate_release(args.lang, args.pkg)
+    else:
+        yaml = ci.generate_ci(args.lang, server=args.server, pkg=args.pkg)
     print(yaml, end="")
     if args.write:
         path = Path(args.write)
@@ -200,11 +204,38 @@ def _cmd_check_promo(args: argparse.Namespace) -> None:
     print("OK: no stale versions, unknown PRs, or broken links.")
 
 
-def _cmd_check_glama(args: argparse.Namespace) -> None:
-    if not glama.check_glama(args.repo, poll=args.poll, wait=args.wait):
+def _cmd_doctor(args: argparse.Namespace) -> None:
+    checks = doctor.doctor()
+    if args.json:
+        import json
+
+        print(json.dumps({"ok": all(c["ok"] for c in checks), "checks": checks}, indent=2))
+    else:
+        for c in checks:
+            print(f"  {'✓' if c['ok'] else '✗'} {c['name']}: {c['detail']}")
+        print(f"\nReady to release: {sum(1 for c in checks if c['ok'])}/"
+              f"{len(checks)} checks passed")
+    if not all(c["ok"] for c in checks):
         raise SystemExit(1)
-    if args.add_badge:
-        glama.add_badge(args.repo, args.readme)
+
+
+def _cmd_check_glama(args: argparse.Namespace) -> None:
+    import json as _json
+
+    listed = glama.check_glama(args.repo, poll=args.poll, wait=args.wait)
+    badge_ok = args.add_badge and glama.add_badge(args.repo, args.readme)
+    if args.json:
+        print(_json.dumps({
+            "repo": args.repo,
+            "listed": listed,
+            "badge": "added" if badge_ok else ("skipped" if not args.add_badge else "failed"),
+            "ok": listed,
+        }, indent=2))
+        if not listed:
+            raise SystemExit(1)
+        return
+    if not listed:
+        raise SystemExit(1)
 
 
 def _cmd_awesome_pr(args: argparse.Namespace) -> None:
@@ -286,6 +317,7 @@ def main() -> None:
     p_ci.add_argument("--server", help="MCP server console-script name (python)")
     p_ci.add_argument("--pkg", default="app")
     p_ci.add_argument("--write", help="write YAML to this path instead of stdout")
+    p_ci.add_argument("--release", action="store_true", help="emit release.yml workflow")
     p_ci.set_defaults(fn=_cmd_ci)
 
     p_bump = sub.add_parser("bump", help="bump version + sync files")
@@ -315,6 +347,10 @@ def main() -> None:
     p_pub.add_argument("--execute", action="store_true", help="actually publish (token from env)")
     p_pub.set_defaults(fn=_cmd_publish)
 
+    p_doctor = sub.add_parser("doctor", help="one-shot environment self-check")
+    p_doctor.add_argument("--json", action="store_true", help="emit JSON")
+    p_doctor.set_defaults(fn=_cmd_doctor)
+
     p_promo = sub.add_parser("check-promo", help="promo freshness + broken links")
     p_promo.add_argument("--dir", required=True)
     p_promo.add_argument("--version", required=True)
@@ -330,6 +366,7 @@ def main() -> None:
     p_glama.add_argument("--add-badge", action="store_true",
                          help="write badge to README when listed")
     p_glama.add_argument("--readme", default="README.md")
+    p_glama.add_argument("--json", action="store_true", help="emit JSON result")
     p_glama.set_defaults(fn=_cmd_check_glama)
 
     p_pr = sub.add_parser("awesome-pr", help="print awesome-list submission recipe")

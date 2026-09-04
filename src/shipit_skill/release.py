@@ -86,7 +86,12 @@ def execute(
     title: str | None = None,
     server: str | None = None,
 ) -> None:
-    """Actually run the release: bump → build → commit → tag → push → gh release → publish."""
+    """Actually run the release: bump → build → publish → tag → gh release → promo.
+
+    The tag and GitHub Release are created only AFTER the registry publish
+    succeeds, so a failed upload never leaves a dangling release. On failure
+    it rolls back the tag and prints cleanup guidance.
+    """
     old = bump.parse_version(dir_)
     new = bump.bump(old, how) if not how.startswith("set:") else how[4:]
     tag = f"v{new}"
@@ -96,16 +101,30 @@ def execute(
     subprocess.run(["git", "add", "-A"], check=True)
     subprocess.run(["git", "commit", "-q", "-m", f"chore: release {tag}"], check=True)
 
-    print(f"[2/6] tag {tag} + push")
+    print("[2/6] build")
+    subprocess.run(["python3", "-m", "build"], check=True)
+
+    print(f"[3/6] publish {pkg} to registry")
+    try:
+        if lang == "python":
+            publish.execute_python(pkg, server)
+        else:
+            publish.execute_typescript()
+    except Exception as e:
+        print(f"\n❌ publish failed: {e}")
+        print("Rolling back the 'chore: release' commit (nothing was pushed/tagged)…")
+        subprocess.run(["git", "reset", "--soft", "HEAD~1"], check=True)
+        print("✓ rolled back — version bump is staged. Next steps:")
+        print("  fix the failure, then re-run the same release command")
+        raise SystemExit(1)
+
+    print(f"[4/6] tag {tag} + push")
     subprocess.run(["git", "tag", tag], check=True)
     subprocess.run(["git", "push"], check=True)
     subprocess.run(["git", "push", "origin", tag], check=True)
 
-    print("[3/6] build")
-    subprocess.run(["python3", "-m", "build"], check=True)
-
     if repo and _gh_available():
-        print(f"[4/6] GitHub Release {tag}")
+        print(f"[5/6] GitHub Release {tag}")
         release_title = title or f"{pkg} {tag}"
         subprocess.run(
             ["gh", "release", "create", tag, "--repo", repo, "--title", release_title,
@@ -113,13 +132,7 @@ def execute(
             check=True,
         )
     else:
-        print("[4/6] (skip gh release — no --repo or gh CLI)")
-
-    print(f"[5/6] publish {pkg} to registry")
-    if lang == "python":
-        publish.execute_python(pkg, server)
-    else:
-        publish.execute_typescript()
+        print("[5/6] (skip gh release — no --repo or gh CLI)")
 
     has_promo = (Path(dir_) / "promo").is_dir()
     if has_promo:

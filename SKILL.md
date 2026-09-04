@@ -132,6 +132,29 @@ platform posts are *ready to paste* (user posts manually — no fake automation)
 
 ---
 
+## CLI quick reference (`shipit-skill`)
+
+Run these to move a repo through the phases. Everything is **print-only by
+default**; the side-effecting variants are opt-in via `--execute`.
+
+| Command | Does | Auto / print |
+|---------|------|--------------|
+| `doctor [--json]` | env self-check: gh authed, tokens set, clean tree on main | print; exit 1 if gaps |
+| `preflight [--dir .] [--version X.Y.Z] [--json]` | launch-readiness gap report | print |
+| `init <dir> --server <srv> --pkg <pkg> [--force] [--dry-run]` | scaffold CI/Dockerfile/promo | writes files |
+| `ci --lang python [--server srv] [--write path] [--release]` | emit `ci.yml`; `--release` emits `release.yml` | print / write |
+| `bump patch|minor|major|set:X.Y.Z [--dir .] [--dry-run] [--commit]` | bump + sync pyproject/`__init__`/CHANGELOG; `--commit` also git-commits | print / write |
+| `release --lang python --pkg <pkg> [--repo o/r] [--execute]` | bump→build→**publish**→tag→gh release→promo check. Tag/Release only created **after** publish succeeds; on publish failure it rolls back the commit | print / **execute** |
+| `publish --lang python --pkg <pkg> [--server srv] [--execute]` | registry upload (token from `PYPI_TOKEN`/`NPM_TOKEN` env) + fresh-install verify | print / **execute** |
+| `check-promo --dir promo --version X.Y.Z [--prs id=state,...] [--no-links] [--report]` | stale versions / unknown PRs / broken links; `--report` emits JSON | print / JSON |
+| `check-glama --repo o/r [--poll N] [--add-badge] [--json]` | wait for Glama listing; `--add-badge` writes README badge once live; `--json` structured | print / write |
+| `awesome-pr --upstream o/r --repo o/r --fork o/r --branch b [--execute --category C --description D --install I]` | PR recipe, or actually fork→edit→push→`gh pr create` | print / **execute** |
+
+Tokens: never stored on disk. `publish/release --execute` reads `PYPI_TOKEN`
+or `NPM_TOKEN` from the environment; prompt the user for it and pass it inline.
+
+---
+
 ## Automation boundary
 
 | Step | Who runs it |
