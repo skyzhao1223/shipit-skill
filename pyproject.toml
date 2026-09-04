@@ -1,6 +1,6 @@
 [project]
 name = "shipit-skill"
-version = "0.5.0"
+version = "0.6.0"
 description = "One-pass launch pipeline Agent Skill for developer tools"
 readme = "README.md"
 license = "MIT"
