@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.3.0] - 2026-09-04
+
+### Added
+
+- **`shipit-skill preflight`** — launch-readiness gap report: scans a repo for
+  CI / Dockerfile / .dockerignore / git remote / promo / version consistency
+  and prints ✓/✗ per check (offline by default, `--online` adds GitHub release).
+- **`shipit-skill bump patch|minor|major|set:X.Y.Z`** — semantic version bump that
+  syncs pyproject.toml, `__init__.__version__`, and CHANGELOG.md. `--dry-run` to preview.
+  *(Fixes a minor-bump bug: `0.1.0` minor now yields `0.2.0`, not `2.0`.)*
+- **`shipit-skill release`** — one-step recipe: bump → build → git tag/push →
+  GitHub Release (`--repo`) → publish commands → promo check. `--dry-run` to preview.
+- **`action.yml`** — reusable GitHub composite action
+  (`uses: skyzhao1223/shipit-skill@v1` with `command`/`args`/`pkg`/`repo` inputs).
+- **Interactive `init`** — prompts for missing `--server`/`--pkg`; `--force` to
+  overwrite existing files, `--dry-run` to preview.
+- **Type checking**: `pyright` job in CI + `[tool.pyright]` config (basic mode,
+  Python 3.9 target).
+- **Pre-commit**: `.pre-commit-config.yaml` with ruff + actionlint.
+- **Multi-OS CI**: matrix on `ubuntu-latest / macos-latest / windows-latest`
+  × Python 3.9 / 3.12, plus separate typecheck and actionlint jobs.
+- **Tests**: 14 → 19 (preflight gap/ok, bump dry-run/write, release recipe).
+
 ## [0.2.0] - 2026-09-04
 
 ### Added — shipit-skill is now a real Python package + CLI
