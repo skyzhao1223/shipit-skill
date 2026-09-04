@@ -1196,3 +1196,74 @@ def test_cli_bump_commit_mocked(monkeypatch, tmp_path):
 def test_glama_add_badge_missing_readme(tmp_path):
     ok = glama.add_badge("me/r", str(tmp_path / "nope.md"))
     assert ok is False
+
+
+# --- publish main() branches ---
+
+
+def test_publish_main_execute_python(monkeypatch, tmp_path):
+    from shipit_skill import publish as pub
+
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "dist").mkdir()
+    (tmp_path / "dist" / "a-0.1.0.whl").write_bytes(b"x")
+    cmds = []
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: cmds.append(c))
+    code, _ = run_mod("publish", "--lang", "python", "--pkg", "demo", "--execute")
+    assert code == 0
+    assert any("twine" in c[1] if len(c) > 1 else False for c in cmds)
+
+
+def test_publish_main_execute_ts(monkeypatch):
+    from shipit_skill import publish as pub
+
+    monkeypatch.setenv("NPM_TOKEN", "x")
+    cmds = []
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: cmds.append(c))
+    code, _ = run_mod("publish", "--lang", "typescript", "--pkg", "@x/cli", "--execute")
+    assert code == 0
+    assert cmds[0][0] == "npm"
+
+
+def test_publish_main_verify_flag(monkeypatch):
+    from shipit_skill import publish as pub
+
+    cmds = []
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: cmds.append(c))
+    code, out = run_mod("publish", "--lang", "python", "--pkg", "demo", "--verify")
+    assert code == 0
+    assert "twine" in out and "fresh-install" in out
+
+
+# --- release main() execute via module dispatch ---
+
+
+def test_release_main_execute_dispatch(monkeypatch, tmp_path):
+    from shipit_skill import publish as pub, release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    monkeypatch.setenv("NPM_TOKEN", "x")
+    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: None)
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
+    code, out = run_mod("release", "--lang", "typescript", "--pkg", "demo",
+                        "--how", "set:0.2.0", "--dir", str(tmp_path), "--execute")
+    assert code == 0
+    assert "Released" in out
+
+
+# --- glama poll success path ---
+
+
+def test_glama_poll_success_via_main(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(glama.time, "sleep", lambda _n: None)
+    monkeypatch.setattr(glama, "fetch_status", lambda _url: 200)
+    readme = tmp_path / "README.md"
+    readme.write_text("# r\n", encoding="utf-8")
+    code, out = run_mod("glama", "--repo", "me/r", "--poll", "1", "--wait", "1",
+                        "--add-badge", "--readme", str(readme))
+    assert code == 0
+    assert "badges/score.svg" in readme.read_text(encoding="utf-8")
