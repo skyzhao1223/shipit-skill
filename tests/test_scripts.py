@@ -1169,10 +1169,16 @@ def test_cli_publish_execute_missing_token():
     assert code == 1
 
 
-def test_cli_release_execute_missing_token(tmp_path):
+def test_cli_release_execute_missing_token(tmp_path, monkeypatch):
     import os
 
+    from shipit_skill import release as rel
+
     os.environ.pop("PYPI_TOKEN", None)
+    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: None)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
     code, _ = run_cli("release", "--lang", "python", "--pkg", "demo",
                       "--how", "patch", "--dir", str(tmp_path), "--execute")
     assert code == 1
