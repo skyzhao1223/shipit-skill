@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from datetime import date
 from pathlib import Path
+from typing import Any, cast
 
 
 def parse(v: str) -> tuple[int, int, int]:
@@ -79,7 +81,16 @@ def parse_version(dir_: str) -> str:
     return "0.0.0"
 
 
+def _utf8_stdout() -> None:
+    try:
+        cast(Any, sys.stdout).reconfigure(encoding="utf-8")
+        cast(Any, sys.stderr).reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
 def main() -> None:
+    _utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("how", help="patch | minor | major | set:X.Y.Z")
     ap.add_argument("--dir", default=".")

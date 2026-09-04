@@ -19,7 +19,9 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
+from typing import Any, cast
 
 SEMVER = re.compile(r"(?<![\d.])(?:v)?0\.\d+\.\d+\b")
 GITHUB_URL = re.compile(r"https?://github\.com/[\w.-]+/[\w.-]+")
@@ -136,7 +138,16 @@ def preflight(
     return {"dir": str(d), "ok": ok, "gaps": gaps, "ready": not gaps}
 
 
+def _utf8_stdout() -> None:
+    try:
+        cast(Any, sys.stdout).reconfigure(encoding="utf-8")
+        cast(Any, sys.stderr).reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
 def main() -> None:
+    _utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=".", help="repo to scan")
     ap.add_argument("--version", help="expected package version")

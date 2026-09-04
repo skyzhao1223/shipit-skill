@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from shipit_skill import awesome_pr, bump, ci, glama, preflight, promo_check, publish, release
 
@@ -166,7 +167,16 @@ def _cmd_awesome_pr(args: argparse.Namespace) -> None:
     print(awesome_pr.recipe(args.upstream, args.repo, args.fork, args.branch, args.title))
 
 
+def _utf8_stdout() -> None:
+    try:
+        cast(Any, sys.stdout).reconfigure(encoding="utf-8")
+        cast(Any, sys.stderr).reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
 def main() -> None:
+    _utf8_stdout()
     ap = argparse.ArgumentParser(prog="shipit-skill", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
 

@@ -15,6 +15,8 @@ def run_mod(module: str, *args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         cwd=ROOT,
+        encoding="utf-8",
+        env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"},
     )
 
 
@@ -24,6 +26,8 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         cwd=ROOT,
+        encoding="utf-8",
+        env={**__import__("os").environ, "PYTHONIOENCODING": "utf-8"},
     )
 
 
