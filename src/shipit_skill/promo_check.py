@@ -77,10 +77,29 @@ def main() -> None:
     ap.add_argument("--version", required=True, help="current version, e.g. 0.1.1")
     ap.add_argument("--prs", default="", help="known PRs as id=state,... e.g. 13600=open")
     ap.add_argument("--no-links", action="store_true", help="skip HTTP link checks")
+    ap.add_argument("--report", action="store_true", help="emit machine-readable JSON")
     args = ap.parse_args()
 
     known_prs = {k: v for k, v in (kv.split("=") for kv in args.prs.split(",") if kv)}
     errors = check_dir(args.dir, args.version, prs=known_prs, check_links=not args.no_links)
+
+    if args.report:
+        import json
+
+        by_file: dict[str, list[str]] = {}
+        for e in errors:
+            name = e.split(":", 1)[0]
+            by_file.setdefault(name, []).append(e)
+        print(json.dumps({
+            "version": args.version,
+            "dir": args.dir,
+            "ok": not errors,
+            "errors": errors,
+            "by_file": by_file,
+        }, indent=2))
+        if errors:
+            raise SystemExit(1)
+        return
 
     if errors:
         print("\n".join(errors))

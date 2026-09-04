@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from datetime import date
 from pathlib import Path
@@ -95,6 +96,7 @@ def main() -> None:
     ap.add_argument("how", help="patch | minor | major | set:X.Y.Z")
     ap.add_argument("--dir", default=".")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--commit", action="store_true", help="git add + commit the bump")
     args = ap.parse_args()
 
     old = parse_version(args.dir)
@@ -106,6 +108,14 @@ def main() -> None:
     if not changes:
         print(f"no changes needed (already at {new})")
     print(f"\n{old} → {new}")
+
+    if args.commit and not args.dry_run and changes:
+        subprocess.run(["git", "add", "-A"], check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", f"chore: bump version to {new}"],
+            check=True,
+        )
+        print(f"committed: bump version to {new}")
 
 
 if __name__ == "__main__":

@@ -20,11 +20,23 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any, cast
 
-from shipit_skill import awesome_pr, bump, ci, glama, preflight, promo_check, publish, release
+from shipit_skill import (
+    __version__,
+    awesome_pr,
+    bump,
+    ci,
+    glama,
+    preflight,
+    promo_check,
+    publish,
+    release,
+)
 
 
 def _ask(prompt: str, default: str) -> str:
@@ -104,7 +116,12 @@ def _cmd_ci(args: argparse.Namespace) -> None:
 
 
 def _cmd_publish(args: argparse.Namespace) -> None:
-    if args.lang == "python":
+    if args.execute:
+        if args.lang == "python":
+            publish.execute_python(args.pkg, args.server)
+        else:
+            publish.execute_typescript()
+    elif args.lang == "python":
         publish.print_python_commands(args.pkg, args.server, args.verify)
     else:
         publish.print_typescript_commands()
@@ -133,9 +150,17 @@ def _cmd_bump(args: argparse.Namespace) -> None:
     for change in bump.set_version(args.dir, new, dry_run=args.dry_run):
         print(("(dry) " if args.dry_run else "") + change)
     print(f"\n{old} → {new}")
+    if args.commit and not args.dry_run:
+        subprocess.run(["git", "add", "-A"], check=True)
+        subprocess.run(["git", "commit", "-q", "-m", f"chore: bump to {new}"], check=True)
+        print(f"committed: bump to {new}")
 
 
 def _cmd_release(args: argparse.Namespace) -> None:
+    if args.execute:
+        release.execute(args.lang, args.pkg, args.how, args.repo, args.dir,
+                        args.title, args.server)
+        return
     for cmd in release.release(
         args.lang, args.pkg, args.how, args.repo, args.dir,
         args.dry_run, args.title, args.server,
@@ -152,6 +177,23 @@ def _cmd_check_promo(args: argparse.Namespace) -> None:
         prs=known,
         check_links=not args.no_links,
     )
+    if args.report:
+        import json
+
+        by_file: dict[str, list[str]] = {}
+        for e in errors:
+            name = e.split(":", 1)[0]
+            by_file.setdefault(name, []).append(e)
+        print(json.dumps({
+            "version": args.version,
+            "dir": args.dir,
+            "ok": not errors,
+            "errors": errors,
+            "by_file": by_file,
+        }, indent=2))
+        if errors:
+            raise SystemExit(1)
+        return
     if errors:
         print("\n".join(errors))
         raise SystemExit(1)
@@ -161,9 +203,19 @@ def _cmd_check_promo(args: argparse.Namespace) -> None:
 def _cmd_check_glama(args: argparse.Namespace) -> None:
     if not glama.check_glama(args.repo, poll=args.poll, wait=args.wait):
         raise SystemExit(1)
+    if args.add_badge:
+        glama.add_badge(args.repo, args.readme)
 
 
 def _cmd_awesome_pr(args: argparse.Namespace) -> None:
+    if args.execute:
+        if not (args.category and args.description and args.install):
+            print("--execute requires --category, --description and --install",
+                  file=sys.stderr)
+            raise SystemExit(2)
+        awesome_pr.execute(args.upstream, args.repo, args.fork, args.branch,
+                           args.category, args.description, args.install, args.title)
+        return
     print(awesome_pr.recipe(args.upstream, args.repo, args.fork, args.branch, args.title))
 
 
@@ -175,10 +227,42 @@ def _utf8_stdout() -> None:
         pass
 
 
+def _latest_pypi_version() -> str | None:
+    """Return the newest shipit-skill on PyPI, or None if it can't be checked."""
+    import json
+    import urllib.request
+
+    req = urllib.request.Request(
+        "https://pypi.org/pypi/shipit-skill/json", headers={"User-Agent": "shipit-skill"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return json.loads(r.read().decode("utf-8"))["info"]["version"]
+    except Exception:
+        return None
+
+
+def _check_upgrade() -> None:
+    latest = _latest_pypi_version()
+    if latest and latest != __version__:
+        print(
+            f"\n→ shipit-skill {latest} available (you have {__version__}); "
+            "upgrade with `pip install -U shipit-skill`",
+            file=sys.stderr,
+        )
+
+
 def main() -> None:
     _utf8_stdout()
+    if sys.stdin.isatty():
+        threading.Thread(target=_check_upgrade, daemon=True).start()
     ap = argparse.ArgumentParser(prog="shipit-skill", description=__doc__)
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    ap.add_argument(
+        "--version", action="version",
+        version=f"shipit-skill {__version__}",
+        help="print version and exit",
+    )
+    sub = ap.add_subparsers(dest="cmd")
 
     p_pre = sub.add_parser("preflight", help="launch-readiness gap report")
     p_pre.add_argument("--dir", default=".")
@@ -208,6 +292,7 @@ def main() -> None:
     p_bump.add_argument("how", help="patch | minor | major | set:X.Y.Z")
     p_bump.add_argument("--dir", default=".")
     p_bump.add_argument("--dry-run", action="store_true")
+    p_bump.add_argument("--commit", action="store_true", help="git add + commit")
     p_bump.set_defaults(fn=_cmd_bump)
 
     p_rel = sub.add_parser("release", help="one-step release recipe")
@@ -219,6 +304,7 @@ def main() -> None:
     p_rel.add_argument("--server", help="MCP server name (python)")
     p_rel.add_argument("--title")
     p_rel.add_argument("--dry-run", action="store_true")
+    p_rel.add_argument("--execute", action="store_true", help="actually run the release")
     p_rel.set_defaults(fn=_cmd_release)
 
     p_pub = sub.add_parser("publish", help="print registry publish commands")
@@ -226,6 +312,7 @@ def main() -> None:
     p_pub.add_argument("--pkg", required=True)
     p_pub.add_argument("--server")
     p_pub.add_argument("--verify", action="store_true")
+    p_pub.add_argument("--execute", action="store_true", help="actually publish (token from env)")
     p_pub.set_defaults(fn=_cmd_publish)
 
     p_promo = sub.add_parser("check-promo", help="promo freshness + broken links")
@@ -233,12 +320,16 @@ def main() -> None:
     p_promo.add_argument("--version", required=True)
     p_promo.add_argument("--prs", default="")
     p_promo.add_argument("--no-links", action="store_true")
+    p_promo.add_argument("--report", action="store_true", help="emit JSON report")
     p_promo.set_defaults(fn=_cmd_check_promo)
 
     p_glama = sub.add_parser("check-glama", help="check Glama listing + badge")
     p_glama.add_argument("--repo", required=True)
     p_glama.add_argument("--poll", type=int, default=0)
     p_glama.add_argument("--wait", type=int, default=40)
+    p_glama.add_argument("--add-badge", action="store_true",
+                         help="write badge to README when listed")
+    p_glama.add_argument("--readme", default="README.md")
     p_glama.set_defaults(fn=_cmd_check_glama)
 
     p_pr = sub.add_parser("awesome-pr", help="print awesome-list submission recipe")
@@ -247,10 +338,29 @@ def main() -> None:
     p_pr.add_argument("--fork", required=True)
     p_pr.add_argument("--branch", required=True)
     p_pr.add_argument("--title", default="")
+    p_pr.add_argument("--category", help="heading to insert under (with --execute)")
+    p_pr.add_argument("--description", help="one-line description (with --execute)")
+    p_pr.add_argument("--install", help="install command, e.g. npx foo (with --execute)")
+    p_pr.add_argument("--execute", action="store_true", help="actually open the PR via gh")
     p_pr.set_defaults(fn=_cmd_awesome_pr)
 
+    _enable_completions(ap)
+
     args = ap.parse_args()
+    if not getattr(args, "cmd", None):
+        ap.print_help()
+        raise SystemExit(2)
     args.fn(args)
+
+
+def _enable_completions(ap: argparse.ArgumentParser) -> None:
+    """Register shell completions when argcomplete is installed (best effort)."""
+    try:
+        import argcomplete  # type: ignore
+
+        argcomplete.autocomplete(ap)
+    except ImportError:
+        pass
 
 
 if __name__ == "__main__":

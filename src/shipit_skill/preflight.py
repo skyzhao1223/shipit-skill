@@ -21,7 +21,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 SEMVER = re.compile(r"(?<![\d.])(?:v)?0\.\d+\.\d+\b")
 GITHUB_URL = re.compile(r"https?://github\.com/[\w.-]+/[\w.-]+")
@@ -66,12 +66,19 @@ def _promo_versions(dir_: Path) -> list[tuple[str, str]]:
     return found
 
 
+class Report(TypedDict):
+    dir: str
+    ok: list[str]
+    gaps: list[str]
+    ready: bool
+
+
 def preflight(
     dir_: str,
     version: str | None = None,
     repo: str | None = None,
     online: bool = False,
-) -> dict:
+) -> Report:
     d = Path(dir_).resolve()
     gaps: list[str] = []
     ok: list[str] = []

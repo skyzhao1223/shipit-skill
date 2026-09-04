@@ -17,11 +17,6 @@ from pathlib import Path
 from shipit_skill import bump, publish
 
 
-def _run(cmd: list[str]) -> str:
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    return r.stdout.strip()
-
-
 def _gh_available() -> bool:
     try:
         subprocess.run(["gh", "--version"], capture_output=True, check=True)
@@ -82,6 +77,63 @@ def release(
     return cmds
 
 
+def execute(
+    lang: str,
+    pkg: str,
+    how: str,
+    repo: str | None = None,
+    dir_: str = ".",
+    title: str | None = None,
+    server: str | None = None,
+) -> None:
+    """Actually run the release: bump → build → commit → tag → push → gh release → publish."""
+    old = bump.parse_version(dir_)
+    new = bump.bump(old, how) if not how.startswith("set:") else how[4:]
+    tag = f"v{new}"
+
+    print(f"[1/6] bump {old} → {new}")
+    bump.set_version(dir_, new)
+    subprocess.run(["git", "add", "-A"], check=True)
+    subprocess.run(["git", "commit", "-q", "-m", f"chore: release {tag}"], check=True)
+
+    print(f"[2/6] tag {tag} + push")
+    subprocess.run(["git", "tag", tag], check=True)
+    subprocess.run(["git", "push"], check=True)
+    subprocess.run(["git", "push", "origin", tag], check=True)
+
+    print("[3/6] build")
+    subprocess.run(["python3", "-m", "build"], check=True)
+
+    if repo and _gh_available():
+        print(f"[4/6] GitHub Release {tag}")
+        release_title = title or f"{pkg} {tag}"
+        subprocess.run(
+            ["gh", "release", "create", tag, "--repo", repo, "--title", release_title,
+             "--generate-notes"],
+            check=True,
+        )
+    else:
+        print("[4/6] (skip gh release — no --repo or gh CLI)")
+
+    print(f"[5/6] publish {pkg} to registry")
+    if lang == "python":
+        publish.execute_python(pkg, server)
+    else:
+        publish.execute_typescript()
+
+    has_promo = (Path(dir_) / "promo").is_dir()
+    if has_promo:
+        print(f"[6/6] promo check ({new})")
+        subprocess.run(
+            ["python3", "-m", "shipit_skill.promo_check",
+             "--dir", str(Path(dir_) / "promo"), "--version", new],
+            check=True,
+        )
+    else:
+        print("[6/6] (skip promo — no promo/ dir)")
+    print(f"\nReleased {tag} ✅")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lang", required=True, choices=["python", "typescript"])
@@ -92,7 +144,12 @@ def main() -> None:
     ap.add_argument("--server", help="MCP server name (python, for --verify)")
     ap.add_argument("--title")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--execute", action="store_true", help="actually run the release")
     args = ap.parse_args()
+
+    if args.execute:
+        execute(args.lang, args.pkg, args.how, args.repo, args.dir, args.title, args.server)
+        return
 
     for cmd in release(
         args.lang, args.pkg, args.how, args.repo, args.dir, args.dry_run, args.title, args.server
