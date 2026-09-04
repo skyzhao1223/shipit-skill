@@ -1,5 +1,5 @@
 [project]
-name = "ship-it"
+name = "shipit-skill"
 version = "0.1.0"
 description = "One-pass launch pipeline Agent Skill for developer tools"
 readme = "README.md"
@@ -12,6 +12,19 @@ dev = [
     "ruff>=0.4",
     "PyYAML>=6.0",
 ]
+
+[tool.setuptools]
+# shipit-skill is a skill bundle, not a Python library — ship its files as data.
+include-package-data = false
+
+[tool.setuptools.data-files]
+"." = [
+    "SKILL.md",
+    "README.md",
+    "CHANGELOG.md",
+]
+"scripts" = ["scripts/*.py"]
+"examples" = ["examples/*.md"]
 
 [tool.ruff]
 line-length = 100

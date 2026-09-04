@@ -1,4 +1,4 @@
-"""Tests for ship-it helper scripts."""
+"""Tests for shipit-skill helper scripts."""
 
 import subprocess
 import sys

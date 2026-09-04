@@ -1,5 +1,5 @@
 ---
-name: ship-it
+name: shipit-skill
 description: >-
   Ship a developer tool (AI agent tool, MCP server, CLI, or library) from
   "it works" to "published + listed + marketable" in one pass. Triggers on
@@ -11,7 +11,7 @@ description: >-
   project and ship it properly.
 ---
 
-# ship-it — one-pass launch pipeline for developer tools
+# shipit-skill — one-pass launch pipeline for developer tools
 
 Take an existing repo from "it works" to **published + listed + marketable**.
 Four phases, each with a hard exit criterion. Skipping a phase is allowed only

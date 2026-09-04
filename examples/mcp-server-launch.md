@@ -1,7 +1,7 @@
-# Example — shipping a minimal MCP server with ship-it
+# Example — shipping a minimal MCP server with shipit-skill
 
 This walks the 4 phases against a toy `hello-mcp` server so you can see exactly
-what ship-it produces at each step. Reproduce it locally to learn the pipeline,
+what shipit-skill produces at each step. Reproduce it locally to learn the pipeline,
 then apply the same steps to your real project.
 
 ```
@@ -9,14 +9,14 @@ hello-mcp/                  # your project (already has working code)
 ├── pyproject.toml          # name=hello-mcp, extras mcp=["mcp>=2.0; python_version >= '3.10'"]
 ├── src/hello_mcp/          # server.py with @server.tool() handlers
 ├── tests/                  # passing tests
-└── scripts/mcp_smoke.py    # copy from ship-it/scripts/mcp_smoke.py
+└── scripts/mcp_smoke.py    # copy from shipit-skill/scripts/mcp_smoke.py
 ```
 
 ## Phase 1 — Baseline
 
 ```bash
 # generate CI (python server → includes Docker handshake job)
-python3 ship-it/scripts/ci.py --lang python --server hello-mcp --pkg hello-mcp \
+python3 shipit-skill/scripts/ci.py --lang python --server hello-mcp --pkg hello-mcp \
   > hello-mcp/.github/workflows/ci.yml
 
 # Dockerfile (build from source so the image matches tested code)
@@ -48,17 +48,17 @@ cd hello-mcp
 ## Phase 2 — Publish
 
 ```bash
-python3 ship-it/scripts/publish.py --lang python --pkg hello-mcp --server hello-mcp --verify
+python3 shipit-skill/scripts/publish.py --lang python --pkg hello-mcp --server hello-mcp --verify
 # prints build + twine commands; PYPI_TOKEN=<pypi-...> twine upload dist/...
 ```
 
 ## Phase 3 — Listings
 
 ```bash
-python3 ship-it/scripts/glama.py --repo <you>/hello-mcp --poll 6
+python3 shipit-skill/scripts/glama.py --repo <you>/hello-mcp --poll 6
 # → LISTED ✅ once the build queue finishes (minutes to hours)
 
-python3 ship-it/scripts/awesome_pr.py \
+python3 shipit-skill/scripts/awesome_pr.py \
   --upstream punkpeye/awesome-mcp-servers \
   --repo <you>/hello-mcp --fork <you>/awesome-mcp-servers \
   --branch add-hello-mcp --title "Add <you>/hello-mcp to <Category>"
@@ -68,7 +68,7 @@ python3 ship-it/scripts/awesome_pr.py \
 
 ```bash
 # keep promo/ with per-platform posts; when versions/PRs change:
-python3 ship-it/scripts/promo_check.py --dir promo --version 0.1.0 --prs 1234=open
+python3 shipit-skill/scripts/promo_check.py --dir promo --version 0.1.0 --prs 1234=open
 # → exit 1 lists every stale version / unknown PR before you paste anything
 ```
 

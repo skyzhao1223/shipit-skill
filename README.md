@@ -1,11 +1,11 @@
-# ⚙️ ship-it
+# ⚙️ shipit-skill
 
-[![CI](https://github.com/skyzhao1223/ship-it/actions/workflows/ci.yml/badge.svg)](https://github.com/skyzhao1223/ship-it/actions/workflows/ci.yml)
+[![CI](https://github.com/skyzhao1223/shipit-skill/actions/workflows/ci.yml/badge.svg)](https://github.com/skyzhao1223/shipit-skill/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Take an existing developer tool from "it works" to "published + listed + marketable" — one pass.**
 
-`ship-it` is an Agent Skill that runs the full launch pipeline for AI/developer tools
+`shipit-skill` is an Agent Skill that runs the full launch pipeline for AI/developer tools
 (MCP servers, CLIs, libraries): engineering baseline → publish → directory listings →
 promo material. It was distilled from shipping [wheel-hub](https://github.com/skyzhao1223/wheel-hub),
 [zspace-cli](https://github.com/skyzhao1223/zspace-cli) and
@@ -18,8 +18,8 @@ Copy this folder into your project (or your agent's skills dir):
 
 ```bash
 # for the current project
-cp -r ship-it/ ~/your-project/.opencode/skills/ship-it   # opencode
-# cp -r ship-it/ ~/your-project/skills/ship-it            # Claude Code, Cursor, etc.
+cp -r shipit-skill/ ~/your-project/.opencode/skills/shipit-skill   # opencode
+# cp -r shipit-skill/ ~/your-project/skills/shipit-skill            # Claude Code, Cursor, etc.
 ```
 
 ## What it does
