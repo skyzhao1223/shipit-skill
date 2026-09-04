@@ -25,8 +25,12 @@ def _run(cmd: list[str]) -> None:
 
 
 def _build() -> None:
-    if not Path("dist").exists() or not any(Path("dist").glob("*.whl")):
-        _run([sys.executable, "-m", "build"])
+    import shutil
+
+    if Path("dist").exists() and any(Path("dist").glob("*.whl")):
+        print("cleaning stale dist/ artifacts before build")
+        shutil.rmtree("dist", ignore_errors=True)
+    _run([sys.executable, "-m", "build"])
 
 
 def verify_python(pkg: str, server: str | None, extras: str) -> None:

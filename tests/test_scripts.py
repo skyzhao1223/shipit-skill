@@ -976,3 +976,20 @@ def test_cli_check_promo_report_cli(tmp_path: Path):
     data = json.loads(out)
     assert data["ok"] is False
     assert any("post.md" in e for e in data["errors"])
+
+
+def test_publish_execute_cleans_stale_dist(monkeypatch, tmp_path: Path):
+    from shipit_skill import publish as pub
+
+    monkeypatch.chdir(tmp_path)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "old-0.3.1.whl").write_bytes(b"stale")
+    monkeypatch.setenv("PYPI_TOKEN", "pypi-abc")
+
+    cmds = []
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: cmds.append(c))
+
+    pub.execute_python("demo", None)
+    assert not (tmp_path / "dist" / "old-0.3.1.whl").exists()
+    assert any("build" in c and "-m" in c and c[-1] == "build" for c in cmds)
