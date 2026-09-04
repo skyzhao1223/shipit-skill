@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0] - 2026-09-04
+
+### Added — shipit-skill is now a real Python package + CLI
+
+- **`shipit_skill` package** — scripts moved from `scripts/` into an importable
+  package (`ci`, `publish`, `glama`, `mcp_smoke`, `promo_check`, `awesome_pr`).
+- **CLI**: `pip install shipit-skill` → `shipit-skill init|ci|publish|check-promo|check-glama|awesome-pr`.
+- **`shipit-skill init`** scaffold: generates CI / Dockerfile / .dockerignore /
+  mcp_smoke.py / promo skeleton in one command.
+- **`promo_check` HTTP link check**: broken GitHub URLs are now detected, not
+  just stale versions / unknown PRs.
+- **Tests**: 14 cases (was 9) — added `cli init`, `ci --write`, `publish`,
+  broken-link, and wheel-content coverage.
+
 ## [0.1.0] - 2026-09-04
 
 Initial release.

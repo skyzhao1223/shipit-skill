@@ -1,15 +1,19 @@
-#!/usr/bin/env python3
-"""Generate a CI workflow for a Python or TypeScript project.
+"""CI workflow generator — shared library + CLI.
 
-Usage:
-    python3 scripts/ci.py --lang python  [--server zs-mcp]  [--pkg zspace-cli]
-    python3 scripts/ci.py --lang typescript
+Usage (CLI):
+    python -m shipit_skill.ci --lang python [--server zs-mcp] [--pkg app]
+    python -m shipit_skill.ci --lang typescript
 
-Prints the YAML to stdout. Pipe to .github/workflows/ci.yml.
+Or from Python:
+    from shipit_skill.ci import generate_ci
+    print(generate_ci("python", server="zs-mcp", pkg="app"))
 """
 
-# ruff: noqa: E501
+from __future__ import annotations
+
 import argparse
+
+# ruff: noqa: E501
 
 PY_CI = """name: CI
 
@@ -81,6 +85,26 @@ jobs:
 """
 
 
+def generate_ci(
+    lang: str,
+    server: str | None = None,
+    pkg: str = "app",
+    py_versions: str = '"3.9", "3.12"',
+    base_py: str = "3.9",
+) -> str:
+    """Generate a CI workflow YAML."""
+    if lang == "typescript":
+        return TS_CI
+    server_block = ""
+    if server:
+        server_block = PY_SERVER_BLOCK.format(pkg=pkg)
+    return PY_CI.format(
+        py_versions=py_versions,
+        base_py=base_py,
+        server_block=server_block,
+    )
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lang", required=True, choices=["python", "typescript"])
@@ -90,17 +114,12 @@ def main() -> None:
     ap.add_argument("--base-py", default="3.9", help="base interpreter for extras-free install")
     args = ap.parse_args()
 
-    if args.lang == "typescript":
-        print(TS_CI)
-        return
-
-    server_block = ""
-    if args.server:
-        server_block = PY_SERVER_BLOCK.format(pkg=args.pkg)
-    print(PY_CI.format(
+    print(generate_ci(
+        args.lang,
+        server=args.server,
+        pkg=args.pkg,
         py_versions=args.py_versions,
         base_py=args.base_py,
-        server_block=server_block,
     ))
 
 

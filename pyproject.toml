@@ -1,6 +1,6 @@
 [project]
 name = "shipit-skill"
-version = "0.1.0"
+version = "0.2.0"
 description = "One-pass launch pipeline Agent Skill for developer tools"
 readme = "README.md"
 license = "MIT"
@@ -13,18 +13,15 @@ dev = [
     "PyYAML>=6.0",
 ]
 
-[tool.setuptools]
-# shipit-skill is a skill bundle, not a Python library — ship its files as data.
-include-package-data = false
+[project.scripts]
+shipit-skill = "shipit_skill.cli:main"
 
-[tool.setuptools.data-files]
-"." = [
-    "SKILL.md",
-    "README.md",
-    "CHANGELOG.md",
-]
-"scripts" = ["scripts/*.py"]
-"examples" = ["examples/*.md"]
+[tool.setuptools]
+packages = ["shipit_skill"]
+package-dir = {"" = "src"}
+
+[tool.setuptools.package-data]
+shipit_skill = ["templates/*", "templates/.dockerignore", "templates/promo/*"]
 
 [tool.ruff]
 line-length = 100

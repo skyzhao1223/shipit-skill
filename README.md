@@ -14,23 +14,32 @@ below is one that actually bit during those releases.
 
 ## Install
 
-Copy this folder into your project (or your agent's skills dir):
+Two ways to use it — as a CLI tool or as an Agent Skill:
+
+**A. CLI (via pip)** — for running the pipeline commands yourself:
 
 ```bash
-# for the current project
+pip install shipit-skill
+shipit-skill init ./my-tool --server my-tool --pkg my-tool   # scaffold CI/Dockerfile/promo
+shipit-skill check-promo --dir promo --version 0.1.1 --prs 13600=open
+```
+
+**B. Agent Skill** — copy this folder into your project (or your agent's skills dir):
+
+```bash
 cp -r shipit-skill/ ~/your-project/.opencode/skills/shipit-skill   # opencode
 # cp -r shipit-skill/ ~/your-project/skills/shipit-skill            # Claude Code, Cursor, etc.
 ```
 
 ## What it does
 
-| Phase | Exit criterion | Scripts |
-|-------|----------------|---------|
+| Phase | Exit criterion | CLI |
+|-------|----------------|-----|
 | **0. Recon** | gap report (CI? Docker? Release? listed? promo?) | — |
-| **1. Baseline** | CI green, metadata right, Dockerfile present | `scripts/ci.py`, `scripts/mcp_smoke.py` |
-| **2. Publish** | on registry + GitHub Release + clean-env verified | `scripts/publish.py` |
-| **3. Listings** | Glama live + awesome PR open | `scripts/glama.py`, `scripts/awesome_pr.py` |
-| **4. Promo** | promo docs match reality | `scripts/promo_check.py` |
+| **1. Baseline** | CI green, metadata right, Dockerfile present | `shipit-skill ci`, `shipit-skill init` |
+| **2. Publish** | on registry + GitHub Release + clean-env verified | `shipit-skill publish` |
+| **3. Listings** | Glama live + awesome PR open | `shipit-skill check-glama`, `shipit-skill awesome-pr` |
+| **4. Promo** | promo docs match reality | `shipit-skill check-promo` |
 
 See [`SKILL.md`](SKILL.md) for the full agent instructions and the automation
 boundary (what the agent runs vs. what needs a human/credential).
