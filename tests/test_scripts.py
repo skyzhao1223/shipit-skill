@@ -1179,7 +1179,7 @@ def test_cli_release_execute_missing_token(tmp_path):
 
 
 def test_cli_bump_commit_mocked(monkeypatch, tmp_path):
-    from shipit_skill import cli as cli_mod, bump as bump_mod
+    from shipit_skill import bump as bump_mod
 
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8"
@@ -1240,17 +1240,17 @@ def test_publish_main_verify_flag(monkeypatch):
 
 
 def test_release_main_execute_dispatch(monkeypatch, tmp_path):
-    from shipit_skill import publish as pub, release as rel
+    from shipit_skill import publish as pub
+    from shipit_skill import release as rel
 
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
     )
     monkeypatch.setenv("PYPI_TOKEN", "x")
-    monkeypatch.setenv("NPM_TOKEN", "x")
     monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: None)
     monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
-    code, out = run_mod("release", "--lang", "typescript", "--pkg", "demo",
-                        "--how", "set:0.2.0", "--dir", str(tmp_path), "--execute")
+    code, out = run_mod("release", "--lang", "python", "--pkg", "demo",
+                        "--how", "patch", "--dir", str(tmp_path), "--execute")
     assert code == 0
     assert "Released" in out
 
@@ -1271,21 +1271,6 @@ def test_glama_poll_success_via_main(monkeypatch, capsys, tmp_path):
 
 # --- release.py gaps ---
 
-
-def test_release_main_execute_dispatch(monkeypatch, tmp_path):
-    from shipit_skill import publish as pub
-    from shipit_skill import release as rel
-
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
-    )
-    monkeypatch.setenv("PYPI_TOKEN", "x")
-    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: None)
-    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
-    code, out = run_mod("release", "--lang", "python", "--pkg", "demo",
-                        "--how", "patch", "--dir", str(tmp_path), "--execute")
-    assert code == 0
-    assert "Released" in out
 
 
 def test_gh_available_false(monkeypatch):
