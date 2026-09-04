@@ -8,6 +8,7 @@ Usage:
 Prints the YAML to stdout. Pipe to .github/workflows/ci.yml.
 """
 
+# ruff: noqa: E501
 import argparse
 
 PY_CI = """name: CI

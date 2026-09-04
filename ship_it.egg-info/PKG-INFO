@@ -1,7 +1,17 @@
-# ⚙️ ship-it
+Metadata-Version: 2.4
+Name: ship-it
+Version: 0.1.0
+Summary: One-pass launch pipeline Agent Skill for developer tools
+License-Expression: MIT
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"
+Dynamic: license-file
 
-[![CI](https://github.com/skyzhao1223/ship-it/actions/workflows/ci.yml/badge.svg)](https://github.com/skyzhao1223/ship-it/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+# ⚙️ ship-it
 
 **Take an existing developer tool from "it works" to "published + listed + marketable" — one pass.**
 
@@ -34,20 +44,6 @@ cp -r ship-it/ ~/your-project/.opencode/skills/ship-it   # opencode
 
 See [`SKILL.md`](SKILL.md) for the full agent instructions and the automation
 boundary (what the agent runs vs. what needs a human/credential).
-
-## Example
-
-[`examples/mcp-server-launch.md`](examples/mcp-server-launch.md) walks all four
-phases against a toy `hello-mcp` server — reproduce it locally to learn the
-pipeline before applying it to a real project.
-
-## Development
-
-```bash
-pip install -e ".[dev]"
-pytest -q          # 9 tests
-ruff check .       # lint
-```
 
 ## The scars (why this exists)
 

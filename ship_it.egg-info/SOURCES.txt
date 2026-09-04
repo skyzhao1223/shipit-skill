@@ -1,0 +1,9 @@
+LICENSE
+README.md
+pyproject.toml
+ship_it.egg-info/PKG-INFO
+ship_it.egg-info/SOURCES.txt
+ship_it.egg-info/dependency_links.txt
+ship_it.egg-info/requires.txt
+ship_it.egg-info/top_level.txt
+tests/test_scripts.py

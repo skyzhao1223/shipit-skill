@@ -46,11 +46,15 @@ def main() -> None:
             pid = m.group(1)
             if pid not in known_prs:
                 line = text[: m.start()].count("\n") + 1
-                errors.append(f"{path.name}:{line}: unknown PR/issue #{pid} (known: {sorted(known_prs)})")
+                errors.append(
+                    f"{path.name}:{line}: unknown PR/issue #{pid} (known: {sorted(known_prs)})"
+                )
         for m in RELEASE_URL.finditer(text):
             tag = m.group(1)
             line = text[: m.start()].count("\n") + 1
-            print(f"{path.name}:{line}: release tag {tag} (verify manually)")
+            print(
+        f"{path.name}:{line}: release tag {tag} (verify manually)"
+    )
 
     if errors:
         print("\n".join(errors))

@@ -12,6 +12,7 @@ Steps printed (fork sync, branch, edit README, push, create PR). The README
 edit itself is intentionally manual — every list has its own format.
 """
 
+# ruff: noqa: E501
 import argparse
 import subprocess
 import sys

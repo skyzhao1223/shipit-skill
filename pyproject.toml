@@ -1,0 +1,23 @@
+[project]
+name = "ship-it"
+version = "0.1.0"
+description = "One-pass launch pipeline Agent Skill for developer tools"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

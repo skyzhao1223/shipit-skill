@@ -9,11 +9,11 @@ Prints the exact publish commands (needs a user-supplied token — never stored)
 Also runs a fresh-install verification in a temp venv when --verify.
 """
 
+# ruff: noqa: E501
 import argparse
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
 
 def run(cmd: list[str]) -> None:
@@ -43,15 +43,15 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.lang == "python":
-        print(f"# Build\npython3 -m build")
+        print("# Build\npython3 -m build")
         print(f"# Publish (set PYPI_TOKEN=<pypi-... token, Upload scope on {args.pkg}>)\n"
               f"python3 -m twine upload --repository-url https://upload.pypi.org/legacy/ \\\n"
               f"  --username __token__ --password \"$PYPI_TOKEN\" dist/{args.pkg}-*.tar.gz dist/{args.pkg}-*.whl")
         if args.verify:
             verify_python(args.pkg, args.server, args.pkg)
     else:
-        print(f"# Publish (set NPM_TOKEN=<granular token, bypass-2fa>)\n"
-              f"npm publish --//registry.npmjs.org/:_authToken=\"$NPM_TOKEN\" --access public")
+        print("# Publish (set NPM_TOKEN=<granular token, bypass-2fa>)\n"
+              "npm publish --//registry.npmjs.org/:_authToken=\"$NPM_TOKEN\" --access public")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,8 @@
 """MCP smoke test: read initialize + tools/list over stdio and assert basics.
 
 Usage:
-    printf '<init-json>\n<notify-json>\n<tools-list-json>\n' | <server-cmd> | python3 scripts/mcp_smoke.py
+    printf '<init>\n<notify>\n<tools-list>\n' \
+        | <server-cmd> | python3 scripts/mcp_smoke.py
 
 Exits 0 if initialize and tools/list were both received and parseable.
 """
