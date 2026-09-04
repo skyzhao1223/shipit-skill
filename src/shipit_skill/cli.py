@@ -30,6 +30,7 @@ from shipit_skill import (
     __version__,
     awesome_pr,
     bump,
+    changelog,
     ci,
     doctor,
     glama,
@@ -51,6 +52,16 @@ def _ask(prompt: str, default: str) -> str:
         return default
 
 
+def _detect_lang(dir_: str = ".") -> str:
+    """Infer the project language from its manifest files (python/typescript)."""
+    d = Path(dir_)
+    if (d / "pyproject.toml").exists():
+        return "python"
+    if (d / "package.json").exists():
+        return "typescript"
+    return "python"
+
+
 def _cmd_init(args: argparse.Namespace) -> None:
     target = Path(args.dir).resolve()
 
@@ -68,13 +79,24 @@ def _cmd_init(args: argparse.Namespace) -> None:
 
     files: list[tuple[Path, str]] = []
 
+    tpl = Path(__file__).parent / "templates"
+
+    gi = tpl / "gitignore"
+    if gi.exists():
+        files.append((target / ".gitignore", gi.read_text(encoding="utf-8")))
+
+    author = args.author or _ask("license author name", "Your Name")
+    lic = tpl / "LICENSE"
+    if lic.exists():
+        files.append((target / "LICENSE", lic.read_text(encoding="utf-8")
+                      .format(year="2026", author=author)))
+
     workflow = target / ".github" / "workflows"
     workflow.mkdir(parents=True, exist_ok=True)
     yaml = ci.generate_ci(args.lang, server=args.server, pkg=args.pkg)
     files.append((workflow / "ci.yml", yaml))
 
     if args.lang == "python" and args.server:
-        tpl = Path(__file__).parent / "templates"
         docker = tpl / "Dockerfile"
         if docker.exists():
             files.append((target / "Dockerfile", docker.read_text(encoding="utf-8")
@@ -111,10 +133,11 @@ def _cmd_init(args: argparse.Namespace) -> None:
 
 
 def _cmd_ci(args: argparse.Namespace) -> None:
+    lang = args.lang or _detect_lang(args.dir)
     if args.release:
-        yaml = ci.generate_release(args.lang, args.pkg)
+        yaml = ci.generate_release(lang, args.pkg)
     else:
-        yaml = ci.generate_ci(args.lang, server=args.server, pkg=args.pkg)
+        yaml = ci.generate_ci(lang, server=args.server, pkg=args.pkg)
     print(yaml, end="")
     if args.write:
         path = Path(args.write)
@@ -124,11 +147,12 @@ def _cmd_ci(args: argparse.Namespace) -> None:
 
 
 def _cmd_publish(args: argparse.Namespace) -> None:
+    args.lang = args.lang or _detect_lang(args.dir)
     if args.execute:
         if args.lang == "python":
             publish.execute_python(args.pkg, args.server)
         else:
-            publish.execute_typescript()
+            publish.execute_typescript(args.pkg)
     elif args.lang == "python":
         publish.print_python_commands(args.pkg, args.server, args.verify)
     else:
@@ -165,6 +189,7 @@ def _cmd_bump(args: argparse.Namespace) -> None:
 
 
 def _cmd_release(args: argparse.Namespace) -> None:
+    args.lang = args.lang or _detect_lang(args.dir)
     if args.execute:
         release.execute(args.lang, args.pkg, args.how, args.repo, args.dir,
                         args.title, args.server)
@@ -210,6 +235,23 @@ def _cmd_check_promo(args: argparse.Namespace) -> None:
         print("\n".join(errors))
         raise SystemExit(1)
     print("OK: no stale versions, unknown PRs, or broken links.")
+
+
+def _cmd_changelog(args: argparse.Namespace) -> None:
+    from_ref = args.from_ref or changelog.last_tag()
+    entry = changelog.generate(args.version, from_ref=from_ref)
+    if args.write:
+        ch = Path(args.dir) / "CHANGELOG.md"
+        header = "# Changelog\n\n"
+        if ch.exists():
+            text = ch.read_text(encoding="utf-8")
+            new_text = header + entry + "\n\n" + text[len(header):]
+        else:
+            new_text = header + entry + "\n"
+        ch.write_text(new_text, encoding="utf-8")
+        print(f"wrote {ch}")
+    else:
+        print(entry)
 
 
 def _cmd_doctor(args: argparse.Namespace) -> None:
@@ -318,10 +360,13 @@ def main() -> None:
     p_init.add_argument("--pkg", default="app", help="package / docker image name")
     p_init.add_argument("--force", action="store_true", help="overwrite existing files")
     p_init.add_argument("--dry-run", action="store_true", help="preview without writing")
+    p_init.add_argument("--author", help="LICENSE copyright holder")
     p_init.set_defaults(fn=_cmd_init)
 
     p_ci = sub.add_parser("ci", help="generate a CI workflow")
-    p_ci.add_argument("--lang", required=True, choices=["python", "typescript"])
+    p_ci.add_argument("--lang", choices=["python", "typescript"],
+                      help="default: detect from pyproject.toml/package.json")
+    p_ci.add_argument("--dir", default=".", help="project dir (for --lang detection)")
     p_ci.add_argument("--server", help="MCP server console-script name (python)")
     p_ci.add_argument("--pkg", default="app")
     p_ci.add_argument("--write", help="write YAML to this path instead of stdout")
@@ -336,11 +381,12 @@ def main() -> None:
     p_bump.set_defaults(fn=_cmd_bump)
 
     p_rel = sub.add_parser("release", help="one-step release recipe")
-    p_rel.add_argument("--lang", required=True, choices=["python", "typescript"])
+    p_rel.add_argument("--lang", choices=["python", "typescript"],
+                      help="default: detect from pyproject.toml/package.json")
     p_rel.add_argument("--pkg", required=True)
     p_rel.add_argument("--how", default="patch")
     p_rel.add_argument("--repo", help="owner/name for GitHub Release")
-    p_rel.add_argument("--dir", default=".")
+    p_rel.add_argument("--dir", default=".", help="project dir (for --lang detection)")
     p_rel.add_argument("--server", help="MCP server name (python)")
     p_rel.add_argument("--title")
     p_rel.add_argument("--dry-run", action="store_true")
@@ -348,12 +394,21 @@ def main() -> None:
     p_rel.set_defaults(fn=_cmd_release)
 
     p_pub = sub.add_parser("publish", help="print registry publish commands")
-    p_pub.add_argument("--lang", required=True, choices=["python", "typescript"])
+    p_pub.add_argument("--lang", choices=["python", "typescript"],
+                      help="default: detect from pyproject.toml/package.json")
     p_pub.add_argument("--pkg", required=True)
+    p_pub.add_argument("--dir", default=".", help="project dir (for --lang detection)")
     p_pub.add_argument("--server")
     p_pub.add_argument("--verify", action="store_true")
     p_pub.add_argument("--execute", action="store_true", help="actually publish (token from env)")
     p_pub.set_defaults(fn=_cmd_publish)
+
+    p_changelog = sub.add_parser("changelog", help="generate CHANGELOG entry from git log")
+    p_changelog.add_argument("--version", required=True)
+    p_changelog.add_argument("--from", dest="from_ref", help="git ref (default: last tag)")
+    p_changelog.add_argument("--write", action="store_true", help="prepend to CHANGELOG.md")
+    p_changelog.add_argument("--dir", default=".")
+    p_changelog.set_defaults(fn=_cmd_changelog)
 
     p_doctor = sub.add_parser("doctor", help="one-shot environment self-check")
     p_doctor.add_argument("--json", action="store_true", help="emit JSON")
@@ -404,7 +459,7 @@ def _enable_completions(ap: argparse.ArgumentParser) -> None:
     try:
         import argcomplete  # type: ignore
 
-        argcomplete.autocomplete(ap)
+        cast(Any, argcomplete).autocomplete(ap)
     except ImportError:
         pass
 

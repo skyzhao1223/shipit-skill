@@ -128,6 +128,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]" build twine
+      - name: doctor gate (fail fast on missing prereqs)
+        run: shipit-skill doctor
+        env:
+          PYPI_TOKEN: ${{{{ secrets.PYPI_TOKEN }}}}
       - name: run shipit-skill release
         run: >
           shipit-skill release --lang {lang} --pkg {pkg}

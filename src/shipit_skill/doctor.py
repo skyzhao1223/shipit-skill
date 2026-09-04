@@ -62,6 +62,18 @@ def _env_flag(name: str) -> bool:
     return bool(os.environ.get(name))
 
 
+def _importable(module: str) -> bool:
+    import importlib.util
+
+    return importlib.util.find_spec(module) is not None
+
+
+def _which(bin_: str) -> bool:
+    import shutil
+
+    return shutil.which(bin_) is not None
+
+
 def doctor() -> list[dict[str, Any]]:
     """Return the list of environment checks (ok/detail per item)."""
     checks: list[dict[str, Any]] = []
@@ -95,6 +107,26 @@ def doctor() -> list[dict[str, Any]]:
         "name": "working tree clean",
         "ok": not _git_dirty(),
         "detail": "clean" if not _git_dirty() else "uncommitted changes",
+    })
+    checks.append({
+        "name": "python version",
+        "ok": True,
+        "detail": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+    })
+    checks.append({
+        "name": "build module importable",
+        "ok": _importable("build"),
+        "detail": "ok" if _importable("build") else "missing (pip install build)",
+    })
+    checks.append({
+        "name": "twine module importable",
+        "ok": _importable("twine"),
+        "detail": "ok" if _importable("twine") else "missing (pip install twine)",
+    })
+    checks.append({
+        "name": "node + npm available",
+        "ok": _which("node") and _which("npm"),
+        "detail": "ok" if _which("node") and _which("npm") else "missing node/npm",
     })
     checks.append({
         "name": "version",

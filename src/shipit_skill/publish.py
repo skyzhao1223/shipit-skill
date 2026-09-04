@@ -95,7 +95,35 @@ def print_typescript_commands() -> None:
     )
 
 
-def execute_typescript() -> None:
+def verify_typescript(pkg: str) -> None:
+    """npm-pack, fresh-install into a temp dir, then smoke-test the CLI binary."""
+    tmp = tempfile.mkdtemp(prefix="shipit-ts-")
+    tarball = subprocess.run(
+        ["npm", "pack", "--json"], capture_output=True, text=True
+    )
+    if tarball.returncode != 0:
+        raise SystemExit(f"npm pack failed: {tarball.stderr.strip()}")
+    import json
+
+    filename = json.loads(tarball.stdout)[0]["filename"]
+    subprocess.run(
+        ["npm", "init", "-y"], cwd=tmp, check=True,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    subprocess.run(
+        ["npm", "install", "-q", str(Path(filename).resolve())], cwd=tmp, check=True
+    )
+    bin_name = pkg.split("/")[-1] if pkg.startswith("@") else pkg
+    r = subprocess.run(
+        ["npx", "--prefix", tmp, bin_name, "--version"],
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        raise SystemExit(f"fresh-install smoke failed for {bin_name}: {r.stderr.strip()}")
+    print(f"fresh-install OK (dir: {tmp}) → {bin_name} {r.stdout.strip()}")
+
+
+def execute_typescript(pkg: str = "app") -> None:
     token = os.environ.get("NPM_TOKEN")
     if not token:
         raise SystemExit("NPM_TOKEN env var required for --execute")
@@ -104,6 +132,7 @@ def execute_typescript() -> None:
         ["npm", "publish", "--//registry.npmjs.org/:_authToken=" + token, "--access", "public"],
         check=True, env=env,
     )
+    verify_typescript(pkg)
 
 
 def main() -> None:
@@ -122,7 +151,7 @@ def main() -> None:
             print_python_commands(args.pkg, args.server, args.verify)
     else:
         if args.execute:
-            execute_typescript()
+            execute_typescript(args.pkg)
         else:
             print_typescript_commands()
 

@@ -14,6 +14,7 @@ import pytest
 from shipit_skill import (
     awesome_pr,
     bump,
+    changelog,
     ci,
     cli,
     doctor,
@@ -64,6 +65,8 @@ def run_mod(module: str, *args: str) -> tuple[int, str]:
                 cli.main()
             elif module == "doctor":
                 doctor.main()
+            elif module == "changelog":
+                changelog.main()
             elif module == "awesome_pr":
                 awesome_pr.main()
             elif module == "mcp_smoke":
@@ -357,7 +360,7 @@ def test_publish_ts_execute_requires_token():
     from shipit_skill import publish as pub
 
     try:
-        pub.execute_typescript()
+        pub.execute_typescript("demo")
     except SystemExit as e:
         assert "NPM_TOKEN" in str(e)
     else:
@@ -430,7 +433,8 @@ def test_publish_execute_ts_happy(monkeypatch):
     monkeypatch.setenv("NPM_TOKEN", "npm-xyz")
     cmds = []
     monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: cmds.append(c))
-    pub.execute_typescript()
+    monkeypatch.setattr(pub, "verify_typescript", lambda pkg: None)
+    pub.execute_typescript("demo")
     assert cmds[0][0] == "npm"
 
 
@@ -489,6 +493,7 @@ def test_release_execute_ts_no_repo(monkeypatch, tmp_path):
 
     monkeypatch.setattr(rel.subprocess, "run", fake_run)
     monkeypatch.setattr(pub.subprocess, "run", fake_run)
+    monkeypatch.setattr(pub, "verify_typescript", lambda pkg: None)
     rel.execute("typescript", "demo", "set:0.2.0", dir_=str(tmp_path))
 
     assert 'version = "0.2.0"' in (tmp_path / "pyproject.toml").read_text(encoding="utf-8")
@@ -1245,6 +1250,7 @@ def test_publish_main_execute_ts(monkeypatch):
     monkeypatch.setenv("NPM_TOKEN", "x")
     cmds = []
     monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: cmds.append(c))
+    monkeypatch.setattr(pub, "verify_typescript", lambda pkg: None)
     code, _ = run_mod("publish", "--lang", "typescript", "--pkg", "@x/cli", "--execute")
     assert code == 0
     assert cmds[0][0] == "npm"
@@ -1794,3 +1800,216 @@ def test_cli_init_interactive_server_default(tmp_path, monkeypatch):
     code, _ = run_cli("init", str(target), "--pkg", "app")
     assert code == 0
     assert "srv" in (target / "smithery.yaml").read_text(encoding="utf-8")
+
+
+# --- lang auto-detection ---
+
+
+def test_detect_lang_python(tmp_path):
+    from shipit_skill import cli as cli_mod
+
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    assert cli_mod._detect_lang(str(tmp_path)) == "python"
+
+
+def test_detect_lang_typescript(tmp_path):
+    from shipit_skill import cli as cli_mod
+
+    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
+    assert cli_mod._detect_lang(str(tmp_path)) == "typescript"
+
+
+def test_detect_lang_default(tmp_path):
+    from shipit_skill import cli as cli_mod
+
+    assert cli_mod._detect_lang(str(tmp_path)) == "python"
+
+
+def test_cli_ci_detect_lang_python(tmp_path):
+    out = tmp_path / "ci.yml"
+    (tmp_path / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+    code, _ = run_cli("ci", "--dir", str(tmp_path), "--write", str(out))
+    assert code == 0
+    assert "pip install" in out.read_text(encoding="utf-8")
+
+
+def test_cli_ci_detect_lang_typescript(tmp_path):
+    out = tmp_path / "ci.yml"
+    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
+    code, _ = run_cli("ci", "--dir", str(tmp_path), "--write", str(out))
+    assert code == 0
+    assert "npm ci" in out.read_text(encoding="utf-8")
+
+
+def test_cli_publish_detect_lang(tmp_path):
+    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
+    code, out = run_cli("publish", "--pkg", "demo", "--dir", str(tmp_path))
+    assert code == 0
+    assert "npm publish" in out
+
+
+# --- changelog ---
+
+
+def test_changelog_generate_categorizes():
+    from shipit_skill import changelog
+
+    commits = [
+        "feat: add badges",
+        "fix: upload stale dist",
+        "docs: update README",
+        "chore: bump deps",
+        "some random commit",
+    ]
+    entry = changelog.generate("0.7.0", commits=commits)
+    assert "## [0.7.0]" in entry
+    assert "### Features" in entry and "- add badges" in entry
+    assert "### Fixes" in entry and "- upload stale dist" in entry
+    assert "### Other" in entry and "- some random commit" in entry
+
+
+def test_changelog_generate_empty():
+    from shipit_skill import changelog
+
+    entry = changelog.generate("0.7.0", commits=[])
+    assert "_No changes._" in entry
+
+
+def test_cli_changelog_write(tmp_path):
+    ch = tmp_path / "CHANGELOG.md"
+    ch.write_text("# Changelog\n\n## [0.6.0] - x\n", encoding="utf-8")
+    code, _ = run_cli("changelog", "--version", "0.7.0", "--write", "--dir", str(tmp_path))
+    assert code == 0
+    text = ch.read_text(encoding="utf-8")
+    assert "## [0.7.0]" in text
+    assert "## [0.6.0]" in text  # preserved below
+
+
+def test_changelog_module_main():
+    code, out = run_mod("changelog", "--version", "9.9.9")
+    assert code == 0
+    assert "## [9.9.9]" in out
+
+
+# --- init .gitignore + LICENSE ---
+
+
+def test_cli_init_generates_gitignore_and_license(tmp_path):
+    target = tmp_path / "t"
+    code, _ = run_cli("init", str(target), "--server", "srv", "--pkg", "t",
+                      "--author", "Jane Doe")
+    assert code == 0
+    assert (target / ".gitignore").exists()
+    assert "node_modules" in (target / ".gitignore").read_text(encoding="utf-8")
+    lic = (target / "LICENSE").read_text(encoding="utf-8")
+    assert "MIT License" in lic
+    assert "Jane Doe" in lic
+
+
+def test_release_warns_missing_changelog(monkeypatch, tmp_path, capsys):
+    from shipit_skill import publish as pub
+    from shipit_skill import release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    _mock_doctor_all_ok(monkeypatch)
+
+    class R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: R())
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
+    rel.execute("python", "demo", "set:0.1.1", dir_=str(tmp_path))
+    out = capsys.readouterr().out
+    assert "no CHANGELOG entry" in out
+
+
+def test_release_no_warning_when_changelog_has_entry(monkeypatch, tmp_path, capsys):
+    from shipit_skill import publish as pub
+    from shipit_skill import release as rel
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nversion = "0.1.0"\n', encoding="utf-8"
+    )
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [0.1.1] - 2026-09-04\n\n- fix\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("PYPI_TOKEN", "x")
+    _mock_doctor_all_ok(monkeypatch)
+
+    class R:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    monkeypatch.setattr(rel.subprocess, "run", lambda c, **kw: R())
+    monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: None)
+    rel.execute("python", "demo", "set:0.1.1", dir_=str(tmp_path))
+    out = capsys.readouterr().out
+    assert "no CHANGELOG entry" not in out
+
+
+# --- publish verify_typescript ---
+
+
+def test_verify_typescript_success(monkeypatch, tmp_path, capsys):
+    import json as _json
+
+    from shipit_skill import publish as pub
+
+    class R:
+        returncode = 0
+        stdout = _json.dumps([{"filename": "demo-1.0.0.tgz"}])
+        stderr = ""
+
+    tarball = tmp_path / "demo-1.0.0.tgz"
+    tarball.write_bytes(b"x")
+    monkeypatch.setattr(pub.subprocess, "run", lambda *a, **k: R())
+    monkeypatch.setattr(pub.tempfile, "mkdtemp", lambda prefix="": str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    pub.verify_typescript("demo")
+    assert "fresh-install OK" in capsys.readouterr().out
+
+
+def test_verify_typescript_pack_failure(monkeypatch):
+    from shipit_skill import publish as pub
+
+    class R:
+        returncode = 1
+        stdout = ""
+        stderr = "boom"
+
+    monkeypatch.setattr(pub.subprocess, "run", lambda *a, **k: R())
+    with pytest.raises(SystemExit):
+        pub.verify_typescript("demo")
+
+
+# --- changelog git branches ---
+
+
+def test_changelog_last_tag(monkeypatch):
+    from shipit_skill import changelog
+
+    class R:
+        returncode = 0
+        stdout = "v0.6.0\n"
+        stderr = ""
+
+    monkeypatch.setattr(changelog.subprocess, "run", lambda *a, **k: R())
+    assert changelog.last_tag() == "v0.6.0"
+
+
+def test_changelog_git_log_from_ref(monkeypatch):
+    from shipit_skill import changelog
+
+    class R:
+        returncode = 0
+        stdout = "feat: x\nfix: y\n"
+        stderr = ""
+
+    monkeypatch.setattr(changelog.subprocess, "run", lambda *a, **k: R())
+    assert changelog._git_log("v0.6.0") == ["feat: x", "fix: y"]

@@ -144,8 +144,9 @@ default**; the side-effecting variants are opt-in via `--execute`.
 | `init <dir> --server <srv> --pkg <pkg> [--force] [--dry-run]` | scaffold CI/Dockerfile/smithery.yaml/promo | writes files |
 | `ci --lang python [--server srv] [--write path] [--release]` | emit `ci.yml`; `--release` emits `release.yml` | print / write |
 | `bump patch|minor|major|set:X.Y.Z [--dir .] [--dry-run] [--commit]` | bump + sync pyproject/`__init__`/CHANGELOG; `--commit` also git-commits | print / write |
-| `release --lang python --pkg <pkg> [--repo o/r] [--execute]` | **doctor gate →** bump→build→**publish**→tag→gh release→promo check. Tag/Release only created **after** publish succeeds; publish failure rolls back the commit; re-runs skip existing tags/releases; notes from CHANGELOG | print / **execute** |
-| `publish --lang python --pkg <pkg> [--server srv] [--execute]` | registry upload (token from `PYPI_TOKEN`/`NPM_TOKEN` env) + fresh-install verify | print / **execute** |
+| `changelog --version X.Y.Z [--from ref] [--write]` | generate a CHANGELOG entry from conventional git log commits (categorized) | print / write |
+| `release --lang python\|typescript [--pkg <pkg>] [--repo o/r] [--execute]` | **doctor gate →** bump→build→**publish**→tag→gh release→promo check. `--lang` auto-detects from manifest; Tag/Release only after publish; publish failure rolls back; re-runs skip existing; notes from CHANGELOG (warns if entry missing) | print / **execute** |
+| `publish --lang python\|typescript [--pkg <pkg>] [--server srv] [--execute]` | registry upload (token from env) + fresh-install verify (venv for PyPI, `npm pack`+install for npm) | print / **execute** |
 | `check-promo --dir promo --version X.Y.Z [--prs id=state,...] [--no-links] [--report] [--fix]` | stale versions / unknown PRs / broken links; `--report` emits JSON; `--fix` rewrites stale versions + marks unknown PRs | print / JSON / **fix** |
 | `check-glama --repo o/r [--poll N] [--add-badge] [--json]` | wait for Glama listing; `--add-badge` writes README badge once live; `--json` structured | print / write |
 | `awesome-pr --upstream o/r --repo o/r --fork o/r --branch b [--execute --category C --description D --install I]` | PR recipe, or actually fork→edit→push→`gh pr create` | print / **execute** |

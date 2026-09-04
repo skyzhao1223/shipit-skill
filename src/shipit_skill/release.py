@@ -135,7 +135,14 @@ def execute(
 
     print("[0/7] doctor gate")
     checks = doctor.doctor()
-    blocked = [c for c in checks if not c["ok"] and c["name"] != "NPM_TOKEN set"]
+    advisory = {
+        "NPM_TOKEN set",
+        "build module importable",
+        "twine module importable",
+        "node + npm available",
+        "python version",
+    }
+    blocked = [c for c in checks if not c["ok"] and c["name"] not in advisory]
     if blocked:
         for c in blocked:
             print(f"  ✗ {c['name']}: {c['detail']}")
@@ -161,7 +168,7 @@ def execute(
         if lang == "python":
             publish.execute_python(pkg, server)
         else:
-            publish.execute_typescript()
+            publish.execute_typescript(pkg)
     except Exception as e:
         print(f"\n❌ publish failed: {e}")
         print("Rolling back the 'chore: release' commit (nothing was pushed/tagged)…")
@@ -171,6 +178,12 @@ def execute(
         raise SystemExit(1)
 
     print(f"[4/7] tag {tag} + push")
+    ch = Path(dir_) / "CHANGELOG.md"
+    missing_entry = (not ch.exists()) or (
+        f"## [{new}]" not in ch.read_text(encoding="utf-8")
+    )
+    if missing_entry:
+        print(f"  ⚠ no CHANGELOG entry for [{new}] — notes will fall back to a generic body")
     if _tag_exists(tag) or _remote_tag_exists(tag):
         print(f"  {tag} already exists — skipping")
     else:
