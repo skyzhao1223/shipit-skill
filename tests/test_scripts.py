@@ -1537,11 +1537,11 @@ def test_awesome_pr_recipe_with_emoji_title():
     assert "🤖🤖🤖" in text
 
 
-def test_awesome_pr_run_failure():
+def test_awesome_pr_run_failure(tmp_path):
     from shipit_skill import awesome_pr
 
     with pytest.raises((SystemExit, FileNotFoundError)):
-        awesome_pr._run(["definitely-not-a-cmd-xyz"], cwd="/tmp")
+        awesome_pr._run(["definitely-not-a-cmd-xyz"], cwd=str(tmp_path))
 
 
 # --- upgrade check network-failure path ---
@@ -2048,7 +2048,7 @@ def test_changelog_last_tag_none(monkeypatch):
     assert changelog.last_tag() is None
 
 
-def test_verify_typescript_smoke_failure(monkeypatch):
+def test_verify_typescript_smoke_failure(monkeypatch, tmp_path):
     import json as _json
 
     from shipit_skill import publish as pub
@@ -2067,8 +2067,8 @@ def test_verify_typescript_smoke_failure(monkeypatch):
         return R()
 
     monkeypatch.setattr(pub.subprocess, "run", fake_run)
-    monkeypatch.setattr(pub.tempfile, "mkdtemp", lambda prefix="": "/tmp/ts-x")
-    monkeypatch.chdir("/tmp")
+    monkeypatch.setattr(pub.tempfile, "mkdtemp", lambda prefix="": str(tmp_path))
+    monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit):
         pub.verify_typescript("demo")
 
