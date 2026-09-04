@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.8.0] - 2026-09-04
+
+### Features
+- publish failure diagnostics — twine/npm errors are classified (bad token,
+  file-already-exists, 404/409, transient) and print an actionable `hint:`
+  before rollback
+- upload auto-retry — `publish`/`release` retry transient failures with
+  exponential backoff; permanent errors (auth, already-exists) fail fast
+- `release --dry-run-notes` — preview the next tag + release notes without
+  publishing anything
+- CI parallelism — pytest-xdist `-n auto` + coverage `parallel` (tests ~40%
+  faster; 179 tests, 94% coverage)
+- README sync — updated command examples, doctor step in the release Action,
+  current test/coverage numbers
+- `changelog` generator used to author this entry from git log
+
+### Chores
+- use tmp_path instead of /tmp for Windows CI
+- drop unused import flagged by ruff 0.16
+- mock doctor tooling checks; expand changelog/verify coverage to 94%
+
 ## [0.7.0] - 2026-09-04
 
 Bumped from 0.6.0.
