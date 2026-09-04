@@ -1212,7 +1212,7 @@ def test_publish_main_execute_python(monkeypatch, tmp_path):
     monkeypatch.setattr(pub.subprocess, "run", lambda c, check=False, **kw: cmds.append(c))
     code, _ = run_mod("publish", "--lang", "python", "--pkg", "demo", "--execute")
     assert code == 0
-    assert any("twine" in c[1] if len(c) > 1 else False for c in cmds)
+    assert any("twine" in c and "upload" in c for c in cmds)
 
 
 def test_publish_main_execute_ts(monkeypatch):
