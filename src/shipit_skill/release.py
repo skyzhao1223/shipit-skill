@@ -99,7 +99,8 @@ def execute(
     print(f"[1/6] bump {old} → {new}")
     bump.set_version(dir_, new)
     subprocess.run(["git", "add", "-A"], check=True)
-    subprocess.run(["git", "commit", "-q", "-m", f"chore: release {tag}"], check=True)
+    subprocess.run(["git", "commit", "-q", "--allow-empty",
+                    "-m", f"chore: release {tag}"], check=True)
 
     print("[2/6] build")
     subprocess.run(["python3", "-m", "build"], check=True)
